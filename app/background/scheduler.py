@@ -21,7 +21,7 @@ class TaskScheduler:
         # Daily tasks at midnight
         self.scheduler.add_job(
             BackgroundTasks.compute_all_user_similarities,
-            CronTrigger(second=0),
+            CronTrigger(minute='*/30'),
             id='compute_user_similarities',
             name='Compute User Similarities',
             replace_existing=True
