@@ -16,11 +16,18 @@ class MovieRecommendation(BaseModel):
     
     # Optional movie details
     title: Optional[str] = None
+    original_title: Optional[str] = None
     overview: Optional[str] = None
+    adult: Optional[bool] = None
+    original_language: Optional[str] = None
     genre: Optional[str] = None
+    popularity: Optional[float] = None
+    video: Optional[bool] = None
     release_date: Optional[str] = None
     vote_average: Optional[float] = None
+    vote_count: Optional[int] = None
     poster_path: Optional[str] = None
+    backdrop_path: Optional[str] = None
 
 class RecommendationResponse(BaseModel):
     user_id: int

@@ -292,7 +292,9 @@ def _add_movie_details(db: Session, recommendations: List[MovieRecommendation]) 
     movie_query = text("""
         SELECT 
             id, title, overview, genre, release_date,
-            vote_average, poster_path
+            vote_average, poster_path, backdrop_path, 
+            original_title, original_language, adult, 
+            popularity, video, vote_count
         FROM movies
         WHERE id = ANY(:movie_ids)
     """)
@@ -307,7 +309,14 @@ def _add_movie_details(db: Session, recommendations: List[MovieRecommendation]) 
             'genre': row[3],
             'release_date': row[4].isoformat() if row[4] else None,
             'vote_average': float(row[5]) if row[5] else None,
-            'poster_path': row[6]
+            'poster_path': row[6],
+            'backdrop_path': row[7],
+            'original_title': row[8],
+            'original_language': row[9],
+            'adult': row[10],
+            'popularity': float(row[11]) if row[11] else None,
+            'video': row[12],
+            'vote_count': row[13]
         }
         for row in results
     }
@@ -322,6 +331,13 @@ def _add_movie_details(db: Session, recommendations: List[MovieRecommendation]) 
             rec.release_date = details['release_date']
             rec.vote_average = details['vote_average']
             rec.poster_path = details['poster_path']
+            rec.backdrop_path = details['backdrop_path']
+            rec.original_title = details['original_title']
+            rec.original_language = details['original_language']
+            rec.adult = details['adult']
+            rec.popularity = details['popularity']
+            rec.video = details['video']
+            rec.vote_count = details['vote_count']
     
     return recommendations
 
