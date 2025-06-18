@@ -3,6 +3,7 @@ from typing import Dict, List, Tuple, Set
 from sqlalchemy.orm import Session
 from app.utils.constants import InteractionWeights
 import logging
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
@@ -226,7 +227,7 @@ class RecommendationScorer:
             interaction = self._get_user_movie_interaction(user_id, movie_id)
             
             if interaction is not None:
-                weighted_sum += similarity * interaction
+                weighted_sum += float(similarity) * float(interaction)
                 similarity_sum += similarity
                 if interaction > 0:
                     influencing_users.append(user_id)
@@ -234,7 +235,7 @@ class RecommendationScorer:
         if similarity_sum == 0:
             return 0.0, []
         
-        score = weighted_sum / similarity_sum
+        score = weighted_sum / float(similarity_sum)
         # Normalize to 0-1 range
         normalized_score = (score + 3) / 6  # Assuming weights range from -3 to 3
         
@@ -275,20 +276,20 @@ class RecommendationScorer:
     def _get_user_movie_interaction(self, user_id: int, movie_id: int) -> float:
         """Get user's interaction weight for a movie"""
         # Check ratings first
-        rating_query = f"""
+        rating_query = text("""
             SELECT rating FROM movie_ratings 
-            WHERE user_id = {user_id} AND movie_id = {movie_id}
-        """
-        result = self.db.execute(rating_query).fetchone()
+            WHERE user_id = :user_id AND movie_id = :movie_id
+        """)
+        result = self.db.execute(rating_query, {'user_id': user_id, 'movie_id': movie_id}).fetchone()
         if result:
             return InteractionWeights.get_weight(None, result[0])
         
         # Check preferences
-        pref_query = f"""
+        pref_query = text("""
             SELECT preference FROM movie_preferences
-            WHERE user_id = {user_id} AND movie_id = {movie_id}
-        """
-        result = self.db.execute(pref_query).fetchone()
+            WHERE user_id = :user_id AND movie_id = :movie_id
+        """)
+        result = self.db.execute(pref_query, {'user_id': user_id, 'movie_id': movie_id}).fetchone()
         if result:
             return InteractionWeights.get_weight(result[0])
         

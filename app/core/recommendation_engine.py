@@ -141,6 +141,16 @@ class RecommendationEngine:
         
         # Get similar users
         similar_users_query = text("""
+            WITH matched_users AS (
+                -- Get all users already matched with the current user
+                SELECT 
+                    CASE 
+                        WHEN user_id = :user_id THEN matched_user_id 
+                        ELSE user_id 
+                    END as matched_user_id
+                FROM matches
+                WHERE :user_id IN (user_id, matched_user_id)
+            )
             SELECT 
                 CASE 
                     WHEN user_id_1 = :user_id THEN user_id_2 
@@ -150,6 +160,11 @@ class RecommendationEngine:
             FROM user_similarities
             WHERE (user_id_1 = :user_id OR user_id_2 = :user_id)
                 AND similarity_score >= :threshold
+                -- Include ONLY already matched users
+                AND CASE 
+                    WHEN user_id_1 = :user_id THEN user_id_2 
+                    ELSE user_id_1 
+                END IN (SELECT matched_user_id FROM matched_users)
             ORDER BY similarity_score DESC
             LIMIT 20
         """)
@@ -158,6 +173,8 @@ class RecommendationEngine:
             similar_users_query, 
             {'user_id': user_id, 'threshold': settings.MATCH_THRESHOLD}
         ).fetchall()
+
+        print(similar_results)
         
         profile['similar_users'] = [(row[0], row[1]) for row in similar_results]
         
@@ -190,7 +207,7 @@ class RecommendationEngine:
                 ) m
                 WHERE m.movie_id NOT IN :interacted_movies
                 LIMIT 200
-            """)
+            """).bindparams(bindparam("interacted_movies", expanding=True))
             
             similar_user_ids = [u[0] for u in user_profile['similar_users']]
             results = self.db.execute(
