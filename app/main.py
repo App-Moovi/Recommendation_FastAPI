@@ -1,16 +1,19 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
+import sys
 
 from app.config import settings
 from app.api.endpoints import recommendations, health
 from app.background.scheduler import TaskScheduler
+from app.api.dependencies import verify_api_key
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
 )
 
 logger = logging.getLogger(__name__)
@@ -20,19 +23,26 @@ task_scheduler = TaskScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    logger.info("Starting Movie Recommender API")
-    task_scheduler.start()
-    yield
-    # Shutdown
-    logger.info("Shutting down Movie Recommender API")
-    task_scheduler.shutdown()
+    try:
+        # Startup
+        logger.info("Starting Movie Recommender API")
+        logger.info(f"API Key configured: {'Yes' if settings.API_KEY else 'No'}")
+        task_scheduler.start()
+        yield
+    except Exception as e:
+        logger.error(f"Error during startup: {str(e)}")
+        raise
+    finally:
+        # Shutdown
+        logger.info("Shutting down Movie Recommender API")
+        task_scheduler.shutdown()
 
 # Create FastAPI app
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
-    lifespan=lifespan
+    lifespan=lifespan,
+    dependencies=[Depends(verify_api_key)]  # Apply API key verification to all endpoints
 )
 
 # Configure CORS

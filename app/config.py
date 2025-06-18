@@ -2,6 +2,9 @@ from pydantic_settings import BaseSettings
 from typing import Optional
 
 class Settings(BaseSettings):
+    # API Key
+    API_KEY: str
+    
     # Database
     DATABASE_URL: str = "postgresql://user:password@localhost/moovie"
     
