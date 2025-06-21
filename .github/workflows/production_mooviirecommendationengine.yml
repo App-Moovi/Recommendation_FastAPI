@@ -38,7 +38,7 @@ jobs:
       - name: Zip artifact for deployment
         run: |
           mkdir deploy
-          cp -r app migrations requirements.txt .env .env.example readme.md deploy/
+          cp -r app migrations requirements.txt readme.md deploy/
           cd deploy
           zip -r ../release.zip .
 
