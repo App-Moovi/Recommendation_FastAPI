@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     API_KEY: str
     
     # Database
-    DATABASE_URL: str = "postgresql://user:password@localhost/moovie"
+    DATABASE_URL: str = "postgresql://zaroor:Karthik%400306@zaroor.postgres.database.azure.com:5432/moovii"
     
     # API Settings
     API_V1_STR: str = "/api/v1"
