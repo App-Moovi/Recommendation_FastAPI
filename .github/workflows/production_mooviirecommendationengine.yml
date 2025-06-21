@@ -18,7 +18,7 @@ jobs:
       - name: Set up Python version
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Create and start virtual environment
         run: |
@@ -37,7 +37,10 @@ jobs:
 
       - name: Zip artifact for deployment
         run: |
-          zip -r release.zip . -x "venv/*" ".git/*" ".github/*" "__pycache__/*" "*.pyc" "tests/*"
+          mkdir deploy
+          cp -r app migrations requirements.txt .env .env.example readme.md deploy/
+          cd deploy
+          zip -r ../release.zip .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -68,11 +71,11 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_CF078CB1A6A3482EBEBC3F3F1CAA718F }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_05C2B8862A814DFE95779911955BA644 }}
 
-      - name: 'Deploy to Azure Web App'
+      - name: "Deploy to Azure Web App"
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
         with:
-          app-name: 'mooviirecommendationengine'
-          slot-name: 'Production'
-          package: '.'
-          startup-command: 'python -m uvicorn app.main:app --host 0.0.0.0 --port 8000'
+          app-name: "mooviirecommendationengine"
+          slot-name: "Production"
+          package: "."
+          startup-command: "python -m uvicorn app.main:app --host 0.0.0.0 --port 8080"
