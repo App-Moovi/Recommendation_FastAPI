@@ -30,12 +30,18 @@ jobs:
           source venv/bin/activate
       
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          source venv/bin/activate
+          pip install -r requirements.txt
         
       # Optional: Add step to run tests here (PyTest, Django test suites, etc.)
 
       - name: Zip artifact for deployment
-        run: zip release.zip ./* -r
+        run: |
+          mkdir deploy
+          cp -r app migrations requirements.txt readme.md deploy/
+          cd deploy
+          zip -r ../release.zip .
 
       - name: Upload artifact for deployment jobs
         uses: actions/upload-artifact@v4
@@ -76,4 +82,6 @@ jobs:
         with:
           app-name: 'moovii-recommendation-engine'
           slot-name: 'Production'
+          package: "release.zip"
+          startup-command: "python -m uvicorn app.main:app --host 0.0.0.0 --port 8080"
           
