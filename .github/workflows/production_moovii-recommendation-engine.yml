@@ -72,4 +72,4 @@ jobs:
           app-name: 'moovii-recommendation-engine'
           slot-name: 'Production'
           package: .
-          startup-command: "gunicorn -w 2 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000 app.main:app"
+          startup-command: "gunicorn -w 2 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8080 app.main:app"
