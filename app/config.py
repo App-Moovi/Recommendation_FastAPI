@@ -3,7 +3,7 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # API Key
-    API_KEY: str = "iO#0q-&p!;b6c|9:iRvQ]laYf]fBhOr_ex8kWaECNQ}s9HZbQm&P18m7=-{`-S0"
+    API_KEY: str = "moovii_engineogebvnotkjzylctjpbriujjiqykwcmtj"
     
     # Database
     DATABASE_URL: str = "postgresql://zaroor:Karthik%400306@zaroor.postgres.database.azure.com:5432/moovii"
