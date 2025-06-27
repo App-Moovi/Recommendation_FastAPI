@@ -26,6 +26,10 @@ class UserMatcher:
         potential_matches = []
         already_matched = set(already_matched_users or [])
         
+        # Get all existing matches for this user to exclude them
+        existing_matches = self._get_existing_matches(user_id)
+        excluded_users = already_matched.union(existing_matches)
+        
         # Find users who have interacted with this movie
         interactions_query = text("""
             SELECT 
@@ -52,21 +56,21 @@ class UserMatcher:
             {'movie_id': movie_id, 'user_id': user_id}
         ).fetchall()
 
-        print('results', results, movie_id, user_id)
+        logger.debug(f'Found {len(results)} users who interacted with movie {movie_id}')
         
         # Group by match conditions
         condition_users = {
             'superlike': [],
             'like': [],
             'rating_5': [],
-            'rating_4': [],
-            'rating_3': [],
+            'rating_4+': [],
+            'rating_3+': [],
             'dislike': []
         }
         
         for row in results:
             other_user_id = row[0]
-            if other_user_id in already_matched:
+            if other_user_id in excluded_users:
                 continue
             
             if row[3] == 'rating':
@@ -74,9 +78,9 @@ class UserMatcher:
                 if rating == 5:
                     condition_users['rating_5'].append(other_user_id)
                 elif rating == 4:
-                    condition_users['rating_4'].append(other_user_id)
+                    condition_users['rating_4+'].append(other_user_id)
                 elif rating == 3:
-                    condition_users['rating_3'].append(other_user_id)
+                    condition_users['rating_3+'].append(other_user_id)
             else:
                 preference = row[2]
                 if preference == 'SUPERLIKE':
@@ -86,43 +90,50 @@ class UserMatcher:
                 elif preference == 'DISLIKE':
                     condition_users['dislike'].append(other_user_id)
         
-        # For each condition, find the best match
+        # For each condition, find the best match from that specific group
         for condition, users in condition_users.items():
             if not users:
                 continue
             
-            # Get similarity scores for these users
-            best_match = self._find_best_match(user_id, users)
-            print(best_match)
+            # Get similarity scores for these specific users
+            best_match = self._find_best_match_from_group(user_id, users)
+            
             if best_match and best_match[1] >= settings.MATCH_THRESHOLD:
-                # Map condition to user-friendly format
-                condition_map = {
-                    'superlike': 'superlike',
-                    'like': 'like',
-                    'rating_5': 'rating_5',
-                    'rating_4': 'rating_4+',
-                    'rating_3': 'rating_3+',
-                    'dislike': 'dislike'
-                }
-                
                 potential_matches.append({
                     'user_id': best_match[0],
-                    'condition': condition_map[condition],
+                    'condition': condition,
                     'confidence': float(best_match[1])
                 })
+                
+                logger.debug(f"Found potential match for condition {condition}: user {best_match[0]} with confidence {best_match[1]}")
         
         return potential_matches
     
-    def _find_best_match(
+    def _get_existing_matches(self, user_id: int) -> set:
+        """Get all existing matches for a user"""
+        matches_query = text("""
+            SELECT 
+                CASE 
+                    WHEN user_id = :user_id THEN matched_user_id 
+                    ELSE user_id 
+                END as matched_user
+            FROM matches
+            WHERE :user_id IN (user_id, matched_user_id)
+        """)
+        
+        results = self.db.execute(matches_query, {'user_id': user_id}).fetchall()
+        return {row[0] for row in results}
+    
+    def _find_best_match_from_group(
         self, 
         user_id: int, 
         candidate_users: List[int]
     ) -> Tuple[int, float]:
-        """Find the best matching user from candidates"""
+        """Find the best matching user from a specific group of candidates"""
         if not candidate_users:
             return None
         
-        # Get similarity scores
+        # Get similarity scores for these specific candidates
         similarity_query = text("""
             SELECT 
                 CASE 
@@ -137,35 +148,37 @@ class UserMatcher:
                 (user_id_2 = :user_id AND user_id_1 = ANY(:candidates))
             )
             ORDER BY similarity_score DESC
-            LIMIT 1
         """)
         
-        result = self.db.execute(
+        results = self.db.execute(
             similarity_query,
             {'user_id': user_id, 'candidates': candidate_users}
-        ).fetchone()
+        ).fetchall()
         
-        if result:
-            return (result[0], float(result[1]))
+        # Return the best match from this specific group
+        if results:
+            best_user_id = results[0][0]
+            best_score = float(results[0][1])
+            return (best_user_id, best_score)
         
         # If no pre-computed similarity, calculate on the fly for top candidate
         # (This should rarely happen if background jobs are running properly)
-        return self._calculate_similarity_for_best_candidate(user_id, candidate_users)
+        return self._calculate_similarity_for_candidates(user_id, candidate_users[:3])
     
-    def _calculate_similarity_for_best_candidate(
+    def _calculate_similarity_for_candidates(
         self,
         user_id: int,
         candidate_users: List[int]
     ) -> Tuple[int, float]:
-        """Calculate similarity on the fly for the best candidate"""
+        """Calculate similarity on the fly for candidates"""
         # Get user interactions
         user_interactions = self._get_user_interactions(user_id)
         
         best_match = None
         best_score = 0
         
-        # Check only top 3 candidates to save computation
-        for candidate_id in candidate_users[:3]:
+        # Check each candidate
+        for candidate_id in candidate_users:
             candidate_interactions = self._get_user_interactions(candidate_id)
             
             # Calculate similarity

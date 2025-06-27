@@ -325,6 +325,7 @@ def _add_movie_details(db: Session, recommendations: List[MovieRecommendation]) 
     for rec in recommendations:
         if rec.movie_id in movie_details:
             details = movie_details[rec.movie_id]
+            rec.score = float("%0.4f" % rec.score)
             rec.title = details['title']
             rec.overview = details['overview']
             rec.genre = details['genre']
@@ -339,7 +340,7 @@ def _add_movie_details(db: Session, recommendations: List[MovieRecommendation]) 
             rec.video = details['video']
             rec.vote_count = details['vote_count']
     
-    return recommendations
+    return sorted(recommendations, key=lambda rec: rec.score, reverse=True)
 
 def _get_cache_info(db: Session, user_id: int) -> dict:
     """Get cache information for a user"""
