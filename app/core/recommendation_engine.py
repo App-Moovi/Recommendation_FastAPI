@@ -25,7 +25,7 @@ class RecommendationEngine:
     def generate_recommendations(
         self, 
         user_id: int, 
-        count: int = 40,
+        count: int,
         force_refresh: bool = False,
         weights: Dict[str, float] = None
     ) -> List[MovieRecommendation]:
