@@ -26,9 +26,18 @@ class RecommendationEngine:
         self, 
         user_id: int, 
         count: int = 40,
-        force_refresh: bool = False
+        force_refresh: bool = False,
+        weights: Dict[str, float] = None
     ) -> List[MovieRecommendation]:
-        """Generate movie recommendations for a user"""
+        """
+        Generate movie recommendations for a user
+        
+        Args:
+            user_id: The user to generate recommendations for
+            count: Number of recommendations to generate (default: 40)
+            force_refresh: Force regeneration of recommendations
+            weights: Custom weights for scoring components
+        """
         
         # Check if we need to use cached recommendations
         if not force_refresh:
@@ -42,17 +51,24 @@ class RecommendationEngine:
         # Get candidate movies
         candidate_movies = self._get_candidate_movies(user_id, user_profile)
         
+        logger.info(f"Found {len(candidate_movies)} candidate movies for user {user_id}")
+        
         # Score all candidates
         scored_movies = []
         for movie_id in candidate_movies:
             movie_features = self._get_movie_features(movie_id)
+            if not movie_features:
+                continue
+                
             score, influencing_users, reason = self.scorer.score_movie_for_user(
                 user_id,
                 movie_id,
                 user_profile['interactions'],
                 user_profile['similar_users'],
                 movie_features,
-                movie_features.get('popularity', 0)
+                movie_features.get('popularity', 0),
+                user_profile['genres'],  # Pass user's preferred genres
+                weights
             )
             
             # Get potential matches for this movie
@@ -71,6 +87,8 @@ class RecommendationEngine:
         
         # Sort by score
         scored_movies.sort(key=lambda x: x['score'], reverse=True)
+        
+        logger.info(f"Scored {len(scored_movies)} movies, top score: {scored_movies[0]['score'] if scored_movies else 0}")
         
         # Apply diversity optimization
         diverse_movies = self.diversity_optimizer.optimize_diversity(
@@ -139,7 +157,7 @@ class RecommendationEngine:
         """)
         profile['genres'] = [row[0] for row in self.db.execute(genre_query, {'user_id': user_id}).fetchall()]
         
-        # Get similar users
+        # Get similar users (ONLY from matched users)
         similar_users_query = text("""
             WITH matched_users AS (
                 -- Get all users already matched with the current user
@@ -173,10 +191,10 @@ class RecommendationEngine:
             similar_users_query, 
             {'user_id': user_id, 'threshold': settings.MATCH_THRESHOLD}
         ).fetchall()
-
-        print(similar_results)
         
         profile['similar_users'] = [(row[0], row[1]) for row in similar_results]
+        
+        logger.info(f"User {user_id} has {len(profile['interactions'])} interactions and {len(profile['similar_users'])} matched similar users")
         
         # Get language preferences
         lang_query = text("""
@@ -193,8 +211,40 @@ class RecommendationEngine:
         # Exclude already interacted movies
         interacted_movies = set(user_profile['interactions'].keys())
         
-        # 1. Movies from similar users (Collaborative)
-        if user_profile['similar_users']:
+        # Check if this is a cold start scenario
+        is_cold_start = len(user_profile['interactions']) < 10 or not user_profile['similar_users']
+        
+        # 1. Movies from preferred genres (PRIORITY for cold start)
+        if user_profile['genres']:
+            # For cold start, get more genre-based candidates
+            limit = 300 if is_cold_start else 150
+            
+            genre_movies_query = text("""
+                SELECT mlg.movie_id, COUNT(DISTINCT mlg.genre_id) as matching_genres
+                FROM movie_list_genres mlg
+                JOIN movies m ON mlg.movie_id = m.id
+                WHERE mlg.genre_id = ANY(:genre_ids)
+                    AND mlg.movie_id NOT IN :interacted_movies
+                GROUP BY mlg.movie_id, m.popularity
+                ORDER BY matching_genres DESC, m.popularity DESC
+                LIMIT :limit
+            """).bindparams(bindparam("interacted_movies", expanding=True))
+
+            
+            results = self.db.execute(
+                genre_movies_query,
+                {
+                    'genre_ids': user_profile['genres'],
+                    'interacted_movies': list(interacted_movies) or [-1],
+                    'limit': limit
+                }
+            ).fetchall()
+            
+            candidates.update(row[0] for row in results)
+            logger.info(f"Added {len(results)} movies from preferred genres")
+        
+        # 2. Movies from similar users (Collaborative) - if user has matches
+        if user_profile['similar_users'] and not is_cold_start:
             similar_users_movies_query = text("""
                 SELECT DISTINCT m.movie_id
                 FROM (
@@ -207,7 +257,7 @@ class RecommendationEngine:
                 ) m
                 WHERE m.movie_id NOT IN :interacted_movies
                 LIMIT 200
-            """).bindparams(bindparam("interacted_movies", expanding=True))
+            """)
             
             similar_user_ids = [u[0] for u in user_profile['similar_users']]
             results = self.db.execute(
@@ -219,24 +269,24 @@ class RecommendationEngine:
             ).fetchall()
             
             candidates.update(row[0] for row in results)
+            logger.info(f"Added {len(results)} movies from similar users")
         
-        # 2. Movies from preferred genres (Content-based)
-        print(user_profile)
-        if user_profile['genres']:
-            genre_movies_query = text("""
-                SELECT mlg.movie_id
-                FROM movie_list_genres mlg
-                JOIN movies m ON mlg.movie_id = m.id
+        # 3. Popular movies in user's genres (important for cold start)
+        if user_profile['genres'] and is_cold_start:
+            popular_genre_query = text("""
+                SELECT m.id
+                FROM movies m
+                JOIN movie_list_genres mlg ON m.id = mlg.movie_id
                 WHERE mlg.genre_id = ANY(:genre_ids)
-                    AND mlg.movie_id NOT IN :interacted_movies
-                GROUP BY mlg.movie_id, m.popularity
+                    AND m.id NOT IN :interacted_movies
+                    AND m.vote_average >= 6.5  -- Quality threshold
+                GROUP BY m.id
                 ORDER BY m.popularity DESC
-                LIMIT 150
+                LIMIT 100
             """).bindparams(bindparam("interacted_movies", expanding=True))
-
             
             results = self.db.execute(
-                genre_movies_query,
+                popular_genre_query,
                 {
                     'genre_ids': user_profile['genres'],
                     'interacted_movies': list(interacted_movies) or [-1]
@@ -244,35 +294,42 @@ class RecommendationEngine:
             ).fetchall()
             
             candidates.update(row[0] for row in results)
+            logger.info(f"Added {len(results)} popular movies from user's genres")
         
-        # 3. Popular movies (for diversity and cold start)
+        # 4. General popular movies (for diversity)
+        popular_limit = 50 if is_cold_start else 100
         popular_movies_query = text("""
             SELECT id FROM movies
             WHERE id NOT IN :interacted_movies
             ORDER BY popularity DESC
-            LIMIT 100
+            LIMIT :limit
         """).bindparams(bindparam("interacted_movies", expanding=True))
         
         results = self.db.execute(
             popular_movies_query,
-            {'interacted_movies': list(interacted_movies) or [-1]}
+            {'interacted_movies': list(interacted_movies) or [-1], 'limit': popular_limit}
         ).fetchall()
         
         candidates.update(row[0] for row in results)
+        logger.info(f"Added {len(results)} popular movies")
         
-        # 4. Trending movies
+        # 5. Trending movies (smaller portion for cold start)
+        trending_limit = 20 if is_cold_start else 50
         trending_query = text("""
             SELECT movie_id FROM movie_list_trending
             WHERE movie_id NOT IN :interacted_movies
-            LIMIT 50
+            LIMIT :limit
         """).bindparams(bindparam("interacted_movies", expanding=True))
         
         results = self.db.execute(
             trending_query,
-            {'interacted_movies': list(interacted_movies) or [-1]}
+            {'interacted_movies': list(interacted_movies) or [-1], 'limit': trending_limit}
         ).fetchall()
         
         candidates.update(row[0] for row in results)
+        logger.info(f"Added {len(results)} trending movies")
+        
+        logger.info(f"Total candidates: {len(candidates)} (Cold start: {is_cold_start})")
         
         return candidates
     
