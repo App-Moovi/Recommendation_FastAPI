@@ -225,6 +225,7 @@ class RecommendationEngine:
                 JOIN movies m ON mlg.movie_id = m.id
                 WHERE mlg.genre_id = ANY(:genre_ids)
                     AND mlg.movie_id NOT IN :interacted_movies
+                    AND m.adult != TRUE
                 GROUP BY mlg.movie_id, m.popularity
                 ORDER BY matching_genres DESC, m.popularity DESC
                 LIMIT :limit
@@ -280,6 +281,7 @@ class RecommendationEngine:
                 WHERE mlg.genre_id = ANY(:genre_ids)
                     AND m.id NOT IN :interacted_movies
                     AND m.vote_average >= 6.5  -- Quality threshold
+                    AND m.adult != TRUE
                 GROUP BY m.id
                 ORDER BY m.popularity DESC
                 LIMIT 100
@@ -301,6 +303,7 @@ class RecommendationEngine:
         popular_movies_query = text("""
             SELECT id FROM movies
             WHERE id NOT IN :interacted_movies
+                AND adult != TRUE
             ORDER BY popularity DESC
             LIMIT :limit
         """).bindparams(bindparam("interacted_movies", expanding=True))
@@ -470,8 +473,8 @@ class RecommendationEngine:
         
         # Insert new recommendations
         for idx, rec in enumerate(recommendations):
-            batch_num = (idx // 20) + 1
-            position = (idx % 20) + 1
+            batch_num = (idx // settings.RECOMMENDATIONS_PER_REQUEST) + 1
+            position = (idx % settings.RECOMMENDATIONS_PER_REQUEST) + 1
             
             cache_query = text("""
                 INSERT INTO recommendation_cache (

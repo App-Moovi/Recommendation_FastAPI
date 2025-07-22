@@ -49,7 +49,7 @@ async def get_recommendations(
         )
         
         # Get the first batch
-        batch_recommendations = recommendations[:settings.RECOMMENDATIONS_PER_REQUEST]
+        batch_recommendations = recommendations[:settings.RECOMMENDATIONS_PER_REQUEST] if recommendations else []
         
         # Add movie details if requested
         if request.include_movie_details:
