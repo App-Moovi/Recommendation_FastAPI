@@ -13,8 +13,8 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Movie Recommender API"
     
     # Recommendation Settings
-    RECOMMENDATIONS_PER_REQUEST: int = 20
-    CACHE_SIZE: int = 40
+    RECOMMENDATIONS_PER_REQUEST: int = 10
+    CACHE_SIZE: int = 20
     
     # Matching Settings
     MATCH_THRESHOLD: float = 0.8  # 80% similarity threshold
