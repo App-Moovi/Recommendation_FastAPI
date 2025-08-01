@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 from datetime import datetime, timedelta
 import logging
 from app.database import SessionLocal
@@ -161,6 +161,70 @@ class BackgroundTasks:
             db.close()
     
     @staticmethod
+    def refresh_user_stats(user_id: int, db: Optional[Session] = None):
+        """
+        Refresh stats for a specific user in real-time
+        This is called after user interactions
+        """
+        close_db = False
+        if db is None:
+            db = SessionLocal()
+            close_db = True
+            
+        try:
+            # Update the user's row in the materialized view
+            refresh_query = text("""
+                -- Delete existing row
+                DELETE FROM user_interaction_summary WHERE user_id = :user_id;
+                
+                -- Insert fresh data
+                INSERT INTO user_interaction_summary
+                SELECT 
+                    u.id as user_id,
+                    COUNT(DISTINCT mp.movie_id) as total_preferences,
+                    COUNT(DISTINCT mr.movie_id) as total_ratings,
+                    AVG(mr.rating) as avg_rating,
+                    COUNT(DISTINCT CASE WHEN mp.preference = 'LIKE' THEN mp.movie_id END) as liked_movies,
+                    COUNT(DISTINCT CASE WHEN mp.preference = 'SUPERLIKE' THEN mp.movie_id END) as superliked_movies,
+                    COUNT(DISTINCT CASE WHEN mp.preference = 'DISLIKE' THEN mp.movie_id END) as disliked_movies,
+                    COUNT(DISTINCT CASE WHEN mr.rating >= 4 THEN mr.movie_id END) as high_rated_movies,
+                    COUNT(DISTINCT CASE WHEN mr.rating <= 2 THEN mr.movie_id END) as low_rated_movies,
+                    ARRAY_AGG(DISTINCT ug.genre_id) FILTER (WHERE ug.genre_id IS NOT NULL) as preferred_genres,
+                    COUNT(DISTINCT m.matched_user_id) as total_matches,
+                    CURRENT_TIMESTAMP as last_updated
+                FROM users u
+                LEFT JOIN movie_preferences mp ON u.id = mp.user_id
+                LEFT JOIN movie_ratings mr ON u.id = mr.user_id
+                LEFT JOIN user_genres ug ON u.id = ug.user_id
+                LEFT JOIN (
+                    SELECT user_id, matched_user_id FROM matches
+                    UNION
+                    SELECT matched_user_id as user_id, user_id as matched_user_id FROM matches
+                ) m ON u.id = m.user_id
+                WHERE u.id = :user_id
+                GROUP BY u.id;
+            """)
+            
+            db.execute(refresh_query, {'user_id': user_id})
+            
+            # Also invalidate recommendation cache for this user
+            cache_clear_query = text("""
+                DELETE FROM recommendation_cache 
+                WHERE user_id = :user_id
+            """)
+            db.execute(cache_clear_query, {'user_id': user_id})
+            
+            db.commit()
+            logger.info(f"Refreshed stats for user {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Error refreshing user stats for user {user_id}: {e}")
+            db.rollback()
+        finally:
+            if close_db:
+                db.close()
+    
+    @staticmethod
     def cleanup_expired_cache():
         """Clean up expired cache entries"""
         db = SessionLocal()
@@ -216,11 +280,11 @@ class BackgroundTasks:
     @staticmethod
     def _get_movie_features(db: Session, movie_id: int) -> Dict:
         """Get movie features for similarity calculation"""
-        # Basic movie info
+        # Basic movie info - updated to include vote_count
         movie_query = text("""
             SELECT 
                 genre, popularity, release_date, 
-                original_language, vote_average
+                original_language, vote_average, vote_count
             FROM movies WHERE id = :movie_id
         """)
         
@@ -234,9 +298,10 @@ class BackgroundTasks:
             'cast_ids': [],
             'production_companies': [],
             'language': movie_data[3],
-            'popularity': movie_data[1] or 0,
+            'popularity': float(movie_data[1]) if movie_data[1] else 0,
             'year': movie_data[2].year if movie_data[2] else None,
-            'vote_average': movie_data[4] or 0
+            'vote_average': float(movie_data[4]) if movie_data[4] else 0,
+            'vote_count': int(movie_data[5]) if movie_data[5] else 0
         }
         
         # Get genres
@@ -316,3 +381,85 @@ class BackgroundTasks:
             'similarity': similarity,
             'now': datetime.utcnow()
         })
+
+    @staticmethod
+    def refresh_materialized_views():
+        """Refresh all materialized views"""
+        db = SessionLocal()
+        try:
+            logger.info("Refreshing materialized views")
+            
+            # Refresh user interaction summary
+            db.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY user_interaction_summary"))
+            db.commit()
+            
+            logger.info("Materialized views refreshed successfully")
+            
+        except Exception as e:
+            logger.error(f"Error refreshing materialized views: {e}")
+            db.rollback()
+        finally:
+            db.close()
+    
+    @staticmethod
+    def refresh_user_stats(user_id: int, db: Optional[Session] = None):
+        """
+        Refresh stats for a specific user in real-time
+        This is called after user interactions
+        """
+        close_db = False
+        if db is None:
+            db = SessionLocal()
+            close_db = True
+            
+        try:
+            # Update the user's row in the materialized view
+            refresh_query = text("""
+                -- Delete existing row
+                DELETE FROM user_interaction_summary WHERE user_id = :user_id;
+                
+                -- Insert fresh data
+                INSERT INTO user_interaction_summary
+                SELECT 
+                    u.id as user_id,
+                    COUNT(DISTINCT mp.movie_id) as total_preferences,
+                    COUNT(DISTINCT mr.movie_id) as total_ratings,
+                    AVG(mr.rating) as avg_rating,
+                    COUNT(DISTINCT CASE WHEN mp.preference = 'LIKE' THEN mp.movie_id END) as liked_movies,
+                    COUNT(DISTINCT CASE WHEN mp.preference = 'SUPERLIKE' THEN mp.movie_id END) as superliked_movies,
+                    COUNT(DISTINCT CASE WHEN mp.preference = 'DISLIKE' THEN mp.movie_id END) as disliked_movies,
+                    COUNT(DISTINCT CASE WHEN mr.rating >= 4 THEN mr.movie_id END) as high_rated_movies,
+                    COUNT(DISTINCT CASE WHEN mr.rating <= 2 THEN mr.movie_id END) as low_rated_movies,
+                    ARRAY_AGG(DISTINCT ug.genre_id) FILTER (WHERE ug.genre_id IS NOT NULL) as preferred_genres,
+                    COUNT(DISTINCT m.matched_user_id) as total_matches
+                FROM users u
+                LEFT JOIN movie_preferences mp ON u.id = mp.user_id
+                LEFT JOIN movie_ratings mr ON u.id = mr.user_id
+                LEFT JOIN user_genres ug ON u.id = ug.user_id
+                LEFT JOIN (
+                    SELECT user_id, matched_user_id FROM matches
+                    UNION
+                    SELECT matched_user_id as user_id, user_id as matched_user_id FROM matches
+                ) m ON u.id = m.user_id
+                WHERE u.id = :user_id
+                GROUP BY u.id;
+            """)
+            
+            db.execute(refresh_query, {'user_id': user_id})
+            
+            # Also invalidate recommendation cache for this user
+            cache_clear_query = text("""
+                DELETE FROM recommendation_cache 
+                WHERE user_id = :user_id
+            """)
+            db.execute(cache_clear_query, {'user_id': user_id})
+            
+            db.commit()
+            logger.info(f"Refreshed stats for user {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Error refreshing user stats for user {user_id}: {e}")
+            db.rollback()
+        finally:
+            if close_db:
+                db.close()

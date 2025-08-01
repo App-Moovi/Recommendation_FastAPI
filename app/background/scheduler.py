@@ -47,7 +47,7 @@ class TaskScheduler:
         # Cleanup expired cache every hour
         self.scheduler.add_job(
             BackgroundTasks.cleanup_expired_cache,
-            CronTrigger(minute=0),
+            CronTrigger(hour=0),
             id='cleanup_cache',
             name='Cleanup Expired Cache',
             replace_existing=True

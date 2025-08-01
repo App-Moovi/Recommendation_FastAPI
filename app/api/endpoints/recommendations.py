@@ -40,7 +40,7 @@ async def get_recommendations(
         
         # Initialize recommendation engine
         engine = RecommendationEngine(db)
-        
+
         # Generate recommendations
         recommendations = engine.generate_recommendations(
             user_id=request.user_id,
