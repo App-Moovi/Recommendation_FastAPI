@@ -10,7 +10,6 @@ from app.models.schemas import (
     RecommendationRequest,
     MovieRecommendation
 )
-from app.background.user_stats import AsyncUserStatsManager
 from app.core.recommendation_engine import RecommendationEngine
 from app.api.dependencies import get_current_user_id
 from app.config import settings
@@ -162,46 +161,122 @@ async def get_next_recommendations(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/{user_id}/queue-stats-update")
-async def queue_user_stats_update(
+@router.post("/{user_id}/interact")
+async def record_interaction(
     user_id: int,
+    movie_id: int,
+    interaction_type: str,
+    rating: Optional[float] = None,
+    review: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """
-    Queue a user's statistics for asynchronous update
+    Record user interaction with a movie and trigger real-time matching
     
-    - **user_id**: The user ID whose stats need updating
+    - **user_id**: The user ID
+    - **movie_id**: The movie ID
+    - **interaction_type**: Type of interaction (like, dislike, superlike, etc.)
+    - **rating**: Optional rating (1-5)
     """
     try:
-        # Validate user exists
-        user_check = db.execute(
-            text("SELECT id FROM users WHERE id = :user_id"),
-            {"user_id": user_id}
-        ).fetchone()
+        # Record the interaction
+        if rating is not None:
+            # Update or insert rating
+            rating_query = text("""
+                INSERT INTO movie_ratings (user_id, movie_id, rating, review, updated_at, created_at)
+                VALUES (:user_id, :movie_id, :rating, :review, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id, movie_id) 
+                DO UPDATE SET rating = :rating, updated_at = CURRENT_TIMESTAMP
+            """)
+            db.execute(rating_query, {
+                'user_id': user_id,
+                'movie_id': movie_id,
+                'rating': rating,
+                'review': review
+            })
         
-        if not user_check:
-            raise HTTPException(status_code=404, detail="User not found")
+        if interaction_type in ['LIKE', 'DISLIKE', 'SUPERLIKE', 'SEEN', 'HIDE']:
+            # Update or insert preference
+            pref_query = text("""
+                INSERT INTO movie_preferences (user_id, movie_id, preference, created_at)
+                VALUES (:user_id, :movie_id, :preference, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id, movie_id)
+                DO UPDATE SET preference = :preference
+            """)
+            db.execute(pref_query, {
+                'user_id': user_id,
+                'movie_id': movie_id,
+                'preference': interaction_type
+            })
         
-        # Queue the stats update
-        success = AsyncUserStatsManager.queue_user_stats_update(user_id)
+        db.commit()
         
-        if not success:
-            raise HTTPException(
-                status_code=503, 
-                detail="Failed to queue stats update. Stats service may be unavailable."
-            )
-        
-        # Get current pending count
-        pending_count = AsyncUserStatsManager.get_pending_updates_count()
+        # Check if this interaction triggers a match
+        match_result = await _check_and_create_match(
+            db, user_id, movie_id, interaction_type, rating
+        )
         
         return {
             "status": "success",
-            "message": f"Stats update queued for user {user_id}",
-            "pending_updates": pending_count
+            "interaction_recorded": True,
+            "match_created": match_result is not None,
+            "matched_user": match_result
         }
         
-    except HTTPException:
-        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{user_id}/matches", response_model=List[dict])
+async def get_user_matches(
+    user_id: int,
+    limit: int = Query(default=10, ge=1, le=50),
+    db: Session = Depends(get_db)
+):
+    """
+    Get matched users for a given user
+    
+    - **user_id**: The user ID
+    - **limit**: Maximum number of matches to return
+    """
+    try:
+        matches_query = text("""
+            SELECT 
+                CASE 
+                    WHEN user_id = :user_id THEN matched_user_id 
+                    ELSE user_id 
+                END as matched_user_id,
+                interactions,
+                created_at,
+                u.name as matched_user_name,
+                u.avatar as matched_user_avatar
+            FROM matches m
+            JOIN users u ON u.id = CASE 
+                WHEN m.user_id = :user_id THEN m.matched_user_id 
+                ELSE m.user_id 
+            END
+            WHERE :user_id IN (user_id, matched_user_id)
+            ORDER BY created_at DESC
+            LIMIT :limit
+        """)
+        
+        results = db.execute(
+            matches_query,
+            {'user_id': user_id, 'limit': limit}
+        ).fetchall()
+        
+        matches = []
+        for row in results:
+            matches.append({
+                'matched_user_id': row[0],
+                'interactions': row[1],
+                'created_at': row[2].isoformat(),
+                'matched_user_name': row[3],
+                'matched_user_avatar': row[4]
+            })
+        
+        return matches
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
