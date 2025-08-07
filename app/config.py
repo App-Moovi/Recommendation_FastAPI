@@ -21,10 +21,6 @@ class Settings(BaseSettings):
     
     # Background Jobs
     ENABLE_BACKGROUND_JOBS: bool = True
-
-    REDIS_HOST: Optional[str] = None
-    REDIS_PORT: Optional[int] = None
-    REDIS_DB: Optional[int] = None
     
     class Config:
         env_file = ".env"

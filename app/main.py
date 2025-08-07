@@ -8,7 +8,6 @@ from app.config import settings
 from app.api.endpoints import recommendations, health
 from app.background.scheduler import TaskScheduler
 from app.api.dependencies import verify_api_key
-from app.background.user_stats import AsyncUserStatsManager
 
 # Configure logging
 logging.basicConfig(
@@ -29,8 +28,6 @@ async def lifespan(app: FastAPI):
         logger.info("Starting Movie Recommender API")
         logger.info(f"API Key configured: {'Yes' if settings.API_KEY else 'No'}")
         task_scheduler.start()
-        AsyncUserStatsManager.initialize()
-        
         yield
     except Exception as e:
         logger.error(f"Error during startup: {str(e)}")
@@ -39,7 +36,6 @@ async def lifespan(app: FastAPI):
         # Shutdown
         logger.info("Shutting down Movie Recommender API")
         task_scheduler.shutdown()
-        AsyncUserStatsManager.shutdown()
 
 # Create FastAPI app
 app = FastAPI(
