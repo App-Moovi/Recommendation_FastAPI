@@ -243,6 +243,7 @@ class RecommendationEngine:
             """)
             profile['language_preferences'] = [row[0] for row in self.db.execute(lang_query, {'user_id': user_id}).fetchall()]
             
+            logger.info(f"User {user_id} Profile: {profile}")
             return profile
             
         except Exception as e:
@@ -267,7 +268,7 @@ class RecommendationEngine:
                 
                 genre_movies_query = text("""
                     SELECT mlg.movie_id, COUNT(DISTINCT mlg.genre_id) as matching_genres, m.popularity
-                    FROM movie_list_genres mlg
+                    FROM movie_genre_links mlg
                     JOIN movies m ON mlg.movie_id = m.id
                     WHERE mlg.genre_id = ANY(:genre_ids)
                         AND mlg.movie_id NOT IN :interacted_movies
@@ -362,7 +363,7 @@ class RecommendationEngine:
                 popular_genre_query = text("""
                     SELECT m.id
                     FROM movies m
-                    JOIN movie_list_genres mlg ON m.id = mlg.movie_id
+                    JOIN movie_genre_links mlg ON m.id = mlg.movie_id
                     WHERE mlg.genre_id = ANY(:genre_ids)
                         AND m.id NOT IN :interacted_movies
                         AND m.vote_average >= 6.0
@@ -391,14 +392,13 @@ class RecommendationEngine:
             # 5. Trending movies (smaller portion)
             trending_limit = 30
             trending_query = text("""
-                SELECT mt.movie_id 
-                FROM movie_list_trending mt
-                JOIN movies m ON mt.movie_id = m.id
-                WHERE mt.movie_id NOT IN :interacted_movies
-                    -- AND m.vote_average >= 6.0 -- Filter out low-rated movies
-                    AND m.original_language = 'en'
-                    AND m.adult != TRUE
-                ORDER BY m.popularity DESC
+                SELECT id
+                FROM movies 
+                WHERE id NOT IN :interacted_movies
+                    -- AND vote_average >= 6.0 -- Filter out low-rated movies
+                    AND original_language = 'en'
+                    AND adult != TRUE
+                ORDER BY popularity DESC
                 LIMIT :limit
             """).bindparams(bindparam("interacted_movies", expanding=True))
             
