@@ -242,6 +242,7 @@ class SimpleJobLockManager:
     def acquire_lock(self, job_name: str, timeout: int) -> bool:
         """Acquire a lock for the given job"""
         with self._lock:
+            logger.info(f"Attempting to acquire lock for job {job_name} with timeout {timeout} seconds. Locks: {self._locks} . LockManager: {self}")
             current_time = time.time()
             
             # Check if lock exists and is not expired
@@ -257,12 +258,15 @@ class SimpleJobLockManager:
             return True
     
     def release_lock(self, job_name: str) -> bool:
+        logger.info(f"Attempting to release lock for job {job_name} with timeout {timeout} seconds. Locks: {self._locks} . LockManager: {self}")
         """Release a lock for the given job"""
         with self._lock:
             return self._locks.pop(job_name, None) is not None
     
     def is_locked(self, job_name: str) -> bool:
         """Check if a job is currently locked"""
+        logger.info(f"Attempting to check is locked for job {job_name} with timeout {timeout} seconds. Locks: {self._locks} . LockManager: {self}")
+
         with self._lock:
             current_time = time.time()
             
@@ -277,8 +281,10 @@ class SimpleJobLockManager:
     
     def force_unlock(self, job_name: str) -> bool:
         """Force unlock a job"""
+        logger.info(f"Attempting to force unlock job {job_name} with timeout {timeout} seconds. Locks: {self._locks} . LockManager: {self}")
         with self._lock:
             return self._locks.pop(job_name, None) is not None
 
 # Uncomment to use the simpler version instead:
 lock_manager = SimpleJobLockManager()
+logger.info(lock_manager)
