@@ -3,6 +3,7 @@ import logging
 import gc
 from typing import Optional, Callable
 from functools import wraps
+from app.utils.logger import timed
 
 logger = logging.getLogger(__name__)
 
@@ -13,18 +14,22 @@ class MemoryMonitor:
         self.process = psutil.Process()
         self.initial_memory = self.get_memory_usage()
     
+    @timed
     def get_memory_usage(self) -> float:
         """Get current memory usage in MB"""
         return self.process.memory_info().rss / 1024 / 1024
     
+    @timed
     def get_memory_percent(self) -> float:
         """Get memory usage as percentage of total system memory"""
         return self.process.memory_percent()
     
+    @timed
     def get_cpu_usage(self) -> float:
         """Get CPU usage percentage"""
         return self.process.cpu_percent(interval=0.1)
     
+    @timed
     def check_memory_usage(self, max_memory_mb: float = 1000) -> bool:
         """
         Check if memory usage is within limits
@@ -46,6 +51,7 @@ class MemoryMonitor:
         
         return True
     
+    @timed
     def log_memory_usage(self, task_name: str = "", include_delta: bool = True):
         """
         Log current memory usage
@@ -66,6 +72,7 @@ class MemoryMonitor:
         
         logger.info(message)
     
+    @timed
     def force_garbage_collection(self):
         """Force garbage collection and log results"""
         before_memory = self.get_memory_usage()
@@ -82,6 +89,7 @@ class MemoryMonitor:
         )
     
     @staticmethod
+    @timed
     def get_system_memory_info() -> dict:
         """Get system memory information"""
         memory = psutil.virtual_memory()

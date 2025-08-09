@@ -4,6 +4,7 @@ from sqlalchemy import text
 from app.utils.constants import MatchingThresholds, InteractionWeights
 from app.config import settings
 import logging
+from app.utils.logger import timed
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +14,7 @@ class UserMatcher:
     def __init__(self, db: Session):
         self.db = db
     
+    @timed
     def get_potential_matches(
         self, 
         user_id: int, 
@@ -109,6 +111,7 @@ class UserMatcher:
         
         return potential_matches
     
+    @timed
     def _get_existing_matches(self, user_id: int) -> set:
         """Get all existing matches for a user"""
         matches_query = text("""
@@ -124,6 +127,7 @@ class UserMatcher:
         results = self.db.execute(matches_query, {'user_id': user_id}).fetchall()
         return {row[0] for row in results}
     
+    @timed
     def _find_best_match_from_group(
         self, 
         user_id: int, 
@@ -165,6 +169,7 @@ class UserMatcher:
         # (This should rarely happen if background jobs are running properly)
         return self._calculate_similarity_for_candidates(user_id, candidate_users[:3])
     
+    @timed
     def _calculate_similarity_for_candidates(
         self,
         user_id: int,
@@ -200,6 +205,7 @@ class UserMatcher:
         
         return None
     
+    @timed
     def _get_user_interactions(self, user_id: int) -> Dict[int, float]:
         """Get all user interactions as weights"""
         interactions = {}
@@ -225,6 +231,7 @@ class UserMatcher:
         
         return interactions
     
+    @timed
     def _calculate_cosine_similarity(
         self,
         user1_interactions: Dict[int, float],

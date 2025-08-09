@@ -15,6 +15,7 @@ from app.core.recommendation_engine import RecommendationEngine
 from app.api.dependencies import get_current_user_id
 from app.config import settings
 
+
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
 @router.post("/", response_model=RecommendationResponse)

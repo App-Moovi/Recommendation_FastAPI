@@ -6,6 +6,7 @@ import tempfile
 from functools import wraps
 from typing import Dict, Optional
 from pathlib import Path
+from app.utils.logger import timed
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ class JobLockManager:
         if self.use_file_locks:
             self.lock_dir.mkdir(exist_ok=True)
     
+    @timed
     def acquire_lock(self, job_name: str, timeout: int) -> bool:
         """Acquire a lock for the given job"""
         with self._lock:
@@ -51,7 +53,8 @@ class JobLockManager:
                 'process_id': os.getpid()
             }
             return True
-    
+
+    @timed    
     def release_lock(self, job_name: str) -> bool:
         """Release a lock for the given job"""
         with self._lock:
@@ -67,6 +70,7 @@ class JobLockManager:
                 return True
             return False
     
+    @timed
     def is_locked(self, job_name: str) -> bool:
         """Check if a job is currently locked"""
         with self._lock:
@@ -87,6 +91,7 @@ class JobLockManager:
             
             return False
     
+    @timed
     def force_unlock(self, job_name: str) -> bool:
         """Force unlock a job (use with caution)"""
         with self._lock:
@@ -103,6 +108,7 @@ class JobLockManager:
             
             return removed
     
+    @timed
     def _cleanup_expired_locks(self):
         """Clean up expired locks from memory"""
         current_time = time.time()
@@ -114,6 +120,7 @@ class JobLockManager:
         for key in expired_keys:
             self._remove_lock(key)
     
+    @timed
     def _remove_lock(self, lock_key: str):
         """Remove a lock and its associated file lock"""
         if lock_key in self._locks:
@@ -123,6 +130,7 @@ class JobLockManager:
             job_name = lock_key.replace("job_lock:", "")
             self._release_file_lock(job_name)
     
+    @timed
     def _acquire_file_lock(self, job_name: str, timeout: int) -> bool:
         """Acquire a file-based lock"""
         try:
@@ -154,6 +162,7 @@ class JobLockManager:
             logger.warning(f"Failed to acquire file lock for {job_name}: {e}")
             return True  # Fallback to memory-only locking
     
+    @timed
     def _release_file_lock(self, job_name: str) -> bool:
         """Release a file-based lock"""
         try:
@@ -165,6 +174,7 @@ class JobLockManager:
             logger.warning(f"Failed to release file lock for {job_name}: {e}")
         return False
     
+    @timed
     def _check_file_lock(self, job_name: str) -> bool:
         """Check if file-based lock exists and is active"""
         try:
@@ -220,10 +230,12 @@ def prevent_overlap(job_name: str, timeout: int = 3600):
         return wrapper
     return decorator
 
+@timed
 def is_job_running(job_name: str) -> bool:
     """Check if a job is currently running"""
     return lock_manager.is_locked(job_name)
 
+@timed
 def force_unlock_job(job_name: str) -> bool:
     """Force unlock a job (use with caution)"""
     result = lock_manager.force_unlock(job_name)
@@ -239,6 +251,7 @@ class SimpleJobLockManager:
         self._locks: Dict[str, float] = {}
         self._lock = threading.RLock()
     
+    @timed
     def acquire_lock(self, job_name: str, timeout: int) -> bool:
         """Acquire a lock for the given job"""
         with self._lock:
@@ -256,11 +269,13 @@ class SimpleJobLockManager:
             self._locks[job_name] = current_time + timeout
             return True
     
+    @timed
     def release_lock(self, job_name: str) -> bool:
         """Release a lock for the given job"""
         with self._lock:
             return self._locks.pop(job_name, None) is not None
     
+    @timed
     def is_locked(self, job_name: str) -> bool:
         """Check if a job is currently locked"""
         with self._lock:
@@ -275,6 +290,7 @@ class SimpleJobLockManager:
             
             return False
     
+    @timed
     def force_unlock(self, job_name: str) -> bool:
         """Force unlock a job"""
         with self._lock:

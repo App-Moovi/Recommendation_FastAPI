@@ -4,8 +4,10 @@ from app.database import get_db
 from fastapi.security.api_key import APIKeyHeader
 from app.config import settings
 import logging
+from app.utils.logger import timed
 
 logger = logging.getLogger(__name__)
+
 
 async def get_current_user_id(user_id: int) -> int:
     """Validate user exists and return user_id"""
