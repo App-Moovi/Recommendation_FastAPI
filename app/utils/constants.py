@@ -22,7 +22,6 @@ class InteractionWeights:
     HIDE = -3.0          # Strong negative signal
     
     @classmethod
-    @timed
     def get_weight(cls, interaction_type: str, rating: float = None) -> float:
         """Get weight for an interaction"""
         if rating is not None:

@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime, timedelta
 import logging
@@ -11,11 +11,123 @@ from app.utils.constants import InteractionWeights
 from app.utils.job_protection import prevent_overlap
 import numpy as np
 from app.utils.logger import timed
+from app.models.schemas import MovieFeatures
+from app.utils.common_tasks import commonTasks
+from collections import defaultdict
+from app.models.database_models import MovieSimilarities
 
 logger = logging.getLogger(__name__)
 
 class BackgroundTasks:
     """Background tasks for pre-computing recommendations and similarities"""
+
+    @staticmethod
+    @prevent_overlap("testing", timeout=60 * 60 * 5)  # 5 hours max
+    def testing():
+        logger.info("Testing background tasks")
+        items = MovieSimilarities.list_movie_similarities(combinations=[(1442532, 597), (597, 575265)])
+        for item in items:
+            logger.info(item)
+
+    @staticmethod
+    @prevent_overlap("movie_similarities", timeout=60 * 60 * 5)  # 5 hours max
+    def compute_movie_similarities():
+        """Compute similarities between movies"""
+        db = SessionLocal()
+        similarity_calculator = SimilarityCalculator()
+
+        limitPerExecution = 100
+        processPerBatch = 100
+        minSimilarity = 0.1
+        
+        try:
+            logger.info("Starting movie similarity computation")
+
+            movie_ids, total_movies = BackgroundTasks._get_movie_ids_to_compute_similarity(db)
+            if not movie_ids:
+                logger.info("No movies to compute similarity for")
+                return
+
+            logger.info(f"Processing {total_movies} movies in batches of {limitPerExecution}")
+            new_movie_features = commonTasks.get_movies_features(movie_ids=movie_ids, db=db)
+
+            computed_pairs = 0
+
+            for i in range(0, total_movies, processPerBatch):
+                movie_batch_query = text(""" 
+                    SELECT m.id
+                    FROM movies m
+                    LIMIT :limit OFFSET :offset
+                """)
+                movie_batch_result = db.execute(movie_batch_query, {'limit': limitPerExecution, 'offset': i}).fetchall()
+                existing_movie_ids = [row[0] for row in movie_batch_result]
+
+                existing_movie_features = commonTasks.get_movies_features(movie_ids=existing_movie_ids, db=db)
+
+                for new_movie_feature in new_movie_features:
+                    new_id = new_movie_feature.movie_id
+
+                    similarity_table: List[Tuple[int, int, float]] = []
+                    for existing_movie_feature in existing_movie_features:
+                        existing_id = existing_movie_feature.movie_id
+                        if new_id == existing_id:
+                            continue
+
+                        computed_pairs += 1
+                        similarity = similarity_calculator.calculate_movie_similarity(new_movie_feature, existing_movie_feature)
+                        if similarity > minSimilarity:
+                            similarity_table.append((new_id, existing_id, similarity))
+            
+                    BackgroundTasks._save_computed_movie_similarities(db, similarity_table)
+            
+            db.commit()
+            logger.info(f"Completed movie similarity computation. Computed {computed_pairs} pairs.")
+            
+        except Exception as e:
+            logger.error(f"Error computing movie similarities: {e}")
+            db.rollback()
+        finally:
+            db.close()
+
+    @staticmethod
+    def _get_movie_ids_to_compute_similarity(db: Session) -> Tuple[List[int], int]:
+        try:
+            logger.info("Getting movie IDs to compute similarity")
+
+            movies_query = text("""
+                SELECT DISTINCT m.id
+                FROM movies m
+                WHERE m.id NOT IN (
+                    SELECT DISTINCT movie_id_1
+                    FROM movie_similarities
+                );
+            """)
+
+            movie_ids = [row[0] for row in db.execute(movies_query).fetchall()]
+            logger.info(f"Processing {len(movie_ids)} movies")
+
+            total_movies_query = text("""
+                SELECT COUNT(DISTINCT m.id)
+                FROM movies m;
+            """)
+
+            total_movies = db.execute(total_movies_query).fetchone()[0]
+            return (movie_ids, total_movies)
+        except Exception as e:
+            logger.error(f"Error getting movie IDs to compute similarity: {e}")
+            raise e
+        
+    @staticmethod
+    def _save_computed_movie_similarities(db: Session, similarities: List[Tuple[int, int, float]]):
+        try:
+            logger.info("Saving computed movie similarities")
+            insert_data = map(lambda x: {'movie_id_1': x[0], 'movie_id_2': x[1], 'similarity_score': x[2]}, similarities)
+            db.bulk_insert_mappings(MovieSimilarities, insert_data)
+            db.commit()
+
+        except Exception as e:
+            logger.error(f"Error saving computed movie similarity: {e}")
+            raise e
     
     @staticmethod
     @timed
@@ -153,79 +265,6 @@ class BackgroundTasks:
                     continue
         
         return pairs_created
-
-    @staticmethod
-    @timed
-    def compute_movie_similarities():
-        """Compute similarities between movies"""
-        db = SessionLocal()
-        try:
-            logger.info("Starting movie similarity computation")
-            
-            # Get all movies with features
-            movies_query = text("""
-                SELECT DISTINCT m.id
-                FROM movies m
-                JOIN movie_list_genres mlg ON m.id = mlg.movie_id
-                WHERE m.popularity > 0
-                ORDER BY m.popularity DESC
-                LIMIT 5000  -- Process top 5000 movies
-            """)
-            
-            movie_ids = [row[0] for row in db.execute(movies_query).fetchall()]
-            logger.info(f"Processing {len(movie_ids)} movies")
-            
-            # Get features for all movies
-            movie_features = {}
-            for movie_id in movie_ids:
-                movie_features[movie_id] = BackgroundTasks._get_movie_features(db, movie_id)
-            
-            # Compute pairwise similarities
-            similarity_calculator = SimilarityCalculator()
-            computed_pairs = 0
-            
-            for i, movie1_id in enumerate(movie_ids):
-                # Only compare with movies that share at least one genre
-                related_movies_query = text("""
-                    SELECT DISTINCT mlg2.movie_id
-                    FROM movie_list_genres mlg1
-                    JOIN movie_list_genres mlg2 ON mlg1.genre_id = mlg2.genre_id
-                    WHERE mlg1.movie_id = :movie_id 
-                        AND mlg2.movie_id > :movie_id
-                        AND mlg2.movie_id = ANY(:movie_ids)
-                """)
-                
-                related_movies = [
-                    row[0] for row in db.execute(
-                        related_movies_query,
-                        {'movie_id': movie1_id, 'movie_ids': movie_ids}
-                    ).fetchall()
-                ]
-                
-                for movie2_id in related_movies:
-                    similarity = similarity_calculator.calculate_movie_similarity(
-                        movie_features[movie1_id],
-                        movie_features[movie2_id]
-                    )
-                    
-                    if similarity > 0.3:  # Minimum threshold
-                        BackgroundTasks._store_movie_similarity(
-                            db, movie1_id, movie2_id, similarity
-                        )
-                        computed_pairs += 1
-                
-                if i % 100 == 0:
-                    logger.info(f"Processed {i}/{len(movie_ids)} movies")
-                    db.commit()
-            
-            db.commit()
-            logger.info(f"Completed movie similarity computation. Computed {computed_pairs} pairs.")
-            
-        except Exception as e:
-            logger.error(f"Error computing movie similarities: {e}")
-            db.rollback()
-        finally:
-            db.close()
     
     @staticmethod
     @timed

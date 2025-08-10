@@ -3,6 +3,7 @@ from collections import defaultdict
 from app.utils.constants import DiversitySettings
 import random
 from app.utils.logger import timed
+from app.models.schemas import MovieFeatures
 
 class DiversityOptimizer:
     """Ensure diversity in recommendations"""
@@ -41,15 +42,16 @@ class DiversityOptimizer:
                     selected.append(movie)
                     
                     # Update counts
-                    genres = movie['features'].get('genres', [])
+                    movie_features: MovieFeatures = movie['features']
+                    genres = movie_features.genres
                     for genre in genres:
                         genre_counts[genre] += 1
                     
-                    year = movie['features'].get('year')
+                    year = movie_features.year
                     if year:
                         year_counts[year] += 1
                     
-                    language = movie['features'].get('language')
+                    language = movie_features.language
                     if language:
                         language_counts[language] += 1
             
@@ -64,7 +66,6 @@ class DiversityOptimizer:
         
         return selected[:target_count]
     
-    @timed
     def _group_by_score_ranges(self, movies: List[Dict]) -> Dict[float, List[Dict]]:
         """Group movies by score ranges to maintain quality"""
         groups = defaultdict(list)
@@ -85,20 +86,21 @@ class DiversityOptimizer:
         language_counts: Dict[str, int]
     ) -> bool:
         """Check if adding this movie maintains diversity"""
-        
+        movie_features: MovieFeatures = movie['features']
+
         # Check genre diversity
-        genres = movie['features'].get('genres', [])
+        genres = movie_features.genres
         for genre in genres:
             if genre_counts.get(genre, 0) >= DiversitySettings.MAX_SAME_GENRE:
                 return False
         
         # Check year diversity
-        year = movie['features'].get('year')
+        year = movie_features.year
         if year and year_counts.get(year, 0) >= DiversitySettings.MAX_SAME_YEAR:
             return False
         
         # Check language diversity
-        language = movie['features'].get('language')
+        language = movie_features.language
         if language and language_counts.get(language, 0) >= DiversitySettings.MAX_SAME_LANGUAGE:
             return False
         
