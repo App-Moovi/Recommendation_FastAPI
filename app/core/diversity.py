@@ -2,10 +2,12 @@ from typing import List, Dict
 from collections import defaultdict
 from app.utils.constants import DiversitySettings
 import random
+from app.utils.logger import timed
 
 class DiversityOptimizer:
     """Ensure diversity in recommendations"""
-    
+
+    @timed    
     def optimize_diversity(
         self, 
         scored_movies: List[Dict], 
@@ -63,6 +65,7 @@ class DiversityOptimizer:
         
         return selected[:target_count]
     
+    @timed
     def _group_by_score_ranges(self, movies: List[Dict]) -> Dict[float, List[Dict]]:
         """Group movies by score ranges to maintain quality"""
         groups = defaultdict(list)
@@ -75,6 +78,7 @@ class DiversityOptimizer:
         
         return groups
     
+    @timed
     def _passes_diversity_check(
         self, 
         movie: Dict,

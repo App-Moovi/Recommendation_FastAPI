@@ -1,4 +1,5 @@
 from enum import Enum
+from app.utils.logger import timed
 
 class InteractionType(str, Enum):
     LIKE = "LIKE"
@@ -21,6 +22,7 @@ class InteractionWeights:
     HIDE = -3.0          # Strong negative signal
     
     @classmethod
+    @timed
     def get_weight(cls, interaction_type: str, rating: float = None) -> float:
         """Get weight for an interaction"""
         if rating is not None:

@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 from app.database import SessionLocal
 from app.background.tasks import BackgroundTasks
+from app.utils.logger import timed
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ class AsyncUserStatsManager:
     _is_processing = False
     
     @classmethod
+    @timed
     def initialize(cls):
         """Initialize the background worker thread"""
         if cls._worker_thread is None or not cls._worker_thread.is_alive():
@@ -32,6 +34,7 @@ class AsyncUserStatsManager:
             logger.info("User stats worker thread started")
     
     @classmethod
+    @timed
     def shutdown(cls):
         """Shutdown the background worker thread"""
         cls._stop_worker = True
@@ -40,6 +43,7 @@ class AsyncUserStatsManager:
             logger.info("User stats worker thread stopped")
     
     @classmethod
+    @timed
     def queue_user_stats_update(cls, user_id: int) -> bool:
         """
         Queue a user stats update (non-blocking)
@@ -66,6 +70,7 @@ class AsyncUserStatsManager:
             return False
     
     @classmethod
+    @timed
     def queue_multiple_users(cls, user_ids: Set[int]) -> bool:
         """
         Queue multiple users for stats update
@@ -95,17 +100,20 @@ class AsyncUserStatsManager:
             return False
     
     @classmethod
+    @timed
     def get_pending_updates_count(cls) -> int:
         """Get count of pending stats updates"""
         with cls._lock:
             return len(cls._pending_updates)
     
     @classmethod
+    @timed
     def is_processing(cls) -> bool:
         """Check if currently processing updates"""
         return cls._is_processing
     
     @classmethod
+    @timed
     def _process_updates_worker(cls):
         """Background worker that processes pending updates every 2 minutes"""
         logger.info("Stats worker thread started")
@@ -154,6 +162,7 @@ class AsyncUserStatsManager:
         logger.info("Stats worker thread stopped")
     
     @classmethod
+    @timed
     def _process_batch(cls, user_ids: List[int]) -> tuple:
         """
         Process a batch of user stats updates
@@ -204,6 +213,7 @@ class AsyncUserStatsManager:
             db.close()
     
     @classmethod
+    @timed
     def force_process_now(cls) -> dict:
         """
         Force immediate processing of pending updates (for admin use)
@@ -252,6 +262,7 @@ class AsyncUserStatsManager:
             cls._is_processing = False
     
     @classmethod
+    @timed
     def get_status(cls) -> dict:
         """Get current status of the stats manager"""
         with cls._lock:
@@ -265,6 +276,7 @@ class AsyncUserStatsManager:
         }
     
     @classmethod
+    @timed
     def clear_pending_queue(cls) -> int:
         """
         Clear all pending stats updates (emergency use only)
@@ -281,6 +293,7 @@ class AsyncUserStatsManager:
 
 # Utility functions for manual management
 
+@timed
 def force_update_user_stats(user_id: int) -> bool:
     """
     Force immediate stats update for a user (use sparingly)

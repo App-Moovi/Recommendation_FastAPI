@@ -10,6 +10,7 @@ from app.core.scoring import SimilarityCalculator
 from app.utils.constants import InteractionWeights
 from app.utils.job_protection import prevent_overlap
 import numpy as np
+from app.utils.logger import timed
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ class BackgroundTasks:
     """Background tasks for pre-computing recommendations and similarities"""
     
     @staticmethod
+    @timed
     def compute_all_user_similarities():
         """
         DEPRECATED: This method has O(n²) complexity and will crash with large user bases.
@@ -26,6 +28,7 @@ class BackgroundTasks:
         raise NotImplementedError("Use compute_user_similarities_batch() instead")
     
     @staticmethod
+    @timed
     @prevent_overlap("user_similarities_batch", timeout=7200)  # 2 hours max
     def compute_user_similarities_batch(batch_size: int = 100):
         """Process users in small batches to prevent memory issues"""
@@ -108,6 +111,7 @@ class BackgroundTasks:
             db.close()
     
     @staticmethod
+    @timed
     def _process_user_batch(db: Session, user_ids: List[int]) -> int:
         """Process similarities for a small batch of users"""
         # Get interactions for this batch only
@@ -151,6 +155,7 @@ class BackgroundTasks:
         return pairs_created
 
     @staticmethod
+    @timed
     def compute_movie_similarities():
         """Compute similarities between movies"""
         db = SessionLocal()
@@ -223,6 +228,7 @@ class BackgroundTasks:
             db.close()
     
     @staticmethod
+    @timed
     def update_user_summary(user_id: int):
         session = SessionLocal()
         try:
@@ -331,6 +337,7 @@ class BackgroundTasks:
             session.close()
     
     @staticmethod
+    @timed
     def cleanup_expired_cache():
         """Clean up expired cache entries"""
         db = SessionLocal()

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.utils.constants import InteractionWeights
 import logging
+from app.utils.logger import timed
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,7 @@ class SimilarityCalculator:
     """Calculate similarities between users and movies"""
     
     @staticmethod
+    @timed
     def calculate_user_similarity(
         user1_interactions: Dict[int, float], 
         user2_interactions: Dict[int, float],
@@ -76,6 +78,7 @@ class SimilarityCalculator:
             return 0.0, 0
     
     @staticmethod
+    @timed
     def _calculate_content_based_user_similarity(
         user1_interactions: Dict[int, float],
         user2_interactions: Dict[int, float],
@@ -115,6 +118,7 @@ class SimilarityCalculator:
             return 0.0, 0
     
     @staticmethod
+    @timed
     def calculate_movie_similarity(
         movie1_features: Dict,
         movie2_features: Dict
@@ -183,7 +187,8 @@ class RecommendationScorer:
         self.db = db
         self.similarity_calculator = SimilarityCalculator()
         self._movie_features_cache = {}  # Cache for movie features
-    
+
+    @timed    
     def score_movie_for_user(
         self,
         user_id: int,
@@ -337,6 +342,7 @@ class RecommendationScorer:
             logger.error(f"Error scoring movie {movie_id} for user {user_id}: {str(e)}")
             raise ScoringError(f"Failed to score movie: {str(e)}")
     
+    @timed
     def _collaborative_score(
         self,
         movie_id: int,
@@ -375,6 +381,7 @@ class RecommendationScorer:
             logger.error(f"Error calculating collaborative score: {str(e)}")
             return 0.0, []
     
+    @timed
     def _content_based_score(
         self,
         movie_id: int,
@@ -421,6 +428,7 @@ class RecommendationScorer:
             logger.error(f"Error calculating content-based score: {str(e)}")
             return 0.0
     
+    @timed
     def _genre_based_score(self, movie_features: Dict, user_genres: List[int]) -> float:
         """
         Calculate genre-based score for a movie with improved scoring
@@ -469,6 +477,7 @@ class RecommendationScorer:
             logger.error(f"Error calculating genre-based score: {str(e)}")
             return 0.0
     
+    @timed
     def _calculate_quality_score(self, movie_features: Dict) -> float:
         """Calculate quality score based on ratings and vote count"""
         try:
@@ -493,6 +502,7 @@ class RecommendationScorer:
             logger.error(f"Error calculating quality score: {str(e)}")
             return 0.0
     
+    @timed
     def _get_trending_score(self, movie_id: int) -> float:
         """Get trending score for a movie"""
         try:
@@ -511,6 +521,7 @@ class RecommendationScorer:
             logger.error(f"Error getting trending score: {str(e)}")
             return 0.0
     
+    @timed
     def _get_user_movie_features(self, user_interactions: Dict[int, float]) -> Dict[int, Dict]:
         """Get features for all movies the user has interacted with"""
         try:
@@ -532,6 +543,7 @@ class RecommendationScorer:
             logger.error(f"Error getting user movie features: {str(e)}")
             return {}
     
+    @timed
     def _batch_get_movie_features(self, movie_ids: List[int]) -> Dict[int, Dict]:
         """Batch fetch movie features for efficiency"""
         try:
@@ -624,6 +636,7 @@ class RecommendationScorer:
             logger.error(f"Error batch getting movie features: {str(e)}")
             return {}
     
+    @timed
     def _get_user_movie_interaction(self, user_id: int, movie_id: int) -> float:
         """Get user's interaction weight for a movie"""
         try:

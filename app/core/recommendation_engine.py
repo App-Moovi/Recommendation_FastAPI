@@ -9,6 +9,7 @@ from app.core.user_matching import UserMatcher
 from app.models.schemas import MovieRecommendation, PotentialMatch
 from app.utils.constants import InteractionWeights, MatchingThresholds
 from app.config import settings
+from app.utils.logger import timed
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ class RecommendationEngine:
         self.user_matcher = UserMatcher(db)
         self.similarity_calculator = SimilarityCalculator()
     
+    @timed
     def generate_recommendations(
         self, 
         user_id: int, 
@@ -145,6 +147,7 @@ class RecommendationEngine:
             logger.error(f"Unexpected error in generate_recommendations for user {user_id}: {str(e)}")
             raise RecommendationEngineError(f"Failed to generate recommendations: {str(e)}")
     
+    @timed
     def _get_user_profile_optimized(self, user_id: int) -> Dict:
         """Get comprehensive user profile using materialized view for better performance"""
         try:
@@ -250,6 +253,7 @@ class RecommendationEngine:
             logger.error(f"Error getting user profile for user {user_id}: {str(e)}")
             raise RecommendationEngineError(f"Failed to get user profile: {str(e)}")
     
+    @timed
     def _get_candidate_movies(self, user_id: int, user_profile: Dict) -> Set[int]:
         """Get candidate movies for recommendation with improved genre focus"""
         try:
@@ -418,6 +422,7 @@ class RecommendationEngine:
             logger.error(f"Error getting candidate movies for user {user_id}: {str(e)}")
             raise RecommendationEngineError(f"Failed to get candidate movies: {str(e)}")
     
+    @timed
     def _get_movie_features(self, movie_id: int) -> Dict:
         """Get comprehensive features for a movie"""
         try:
@@ -483,6 +488,7 @@ class RecommendationEngine:
             logger.error(f"Error getting movie features for movie {movie_id}: {str(e)}")
             return {}
     
+    @timed
     def _get_cached_recommendations(self, user_id: int) -> List[MovieRecommendation]:
         """Get cached recommendations if available"""
         try:
@@ -548,6 +554,7 @@ class RecommendationEngine:
             logger.error(f"Error getting cached recommendations for user {user_id}: {str(e)}")
             return []
     
+    @timed
     def _cache_recommendations(self, user_id: int, recommendations: List[MovieRecommendation]):
         """Cache recommendations for future use"""
         try:
