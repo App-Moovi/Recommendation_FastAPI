@@ -53,8 +53,7 @@ class RecommendationEngine:
                     return cached[:count]
             
             # Get user profile using materialized view
-            user_profile = self._get_user_profile_optimized(user_id)
-            print(user_profile)
+            user_profile = self._get_user_profile(user_id)
             
             if not user_profile:
                 raise RecommendationEngineError(f"User profile not found for user_id: {user_id}")
@@ -76,28 +75,28 @@ class RecommendationEngine:
                         continue
                     
                     # Use improved scoring with better weights
-                    score, influencing_users, reason = self.scorer.score_movie_for_user(
-                        user_id,
-                        movie_id,
-                        user_profile['interactions'],
-                        user_profile['similar_users'],
-                        movie_features,
-                        movie_features.get('popularity', 0),
-                        user_profile['genres'],
-                        weights
-                    )
+                    # score, influencing_users, reason = self.scorer.score_movie_for_user(
+                    #     user_id,
+                    #     movie_id,
+                    #     user_profile['interactions'],
+                    #     user_profile['similar_users'],
+                    #     movie_features,
+                    #     movie_features.get('popularity', 0),
+                    #     user_profile['genres'],
+                    #     weights
+                    # )
                     
-                    # Get potential matches for this movie
-                    potential_matches = self.user_matcher.get_potential_matches(
-                        user_id, movie_id, influencing_users
-                    )
+                    # # Get potential matches for this movie
+                    # potential_matches = self.user_matcher.get_potential_matches(
+                    #     user_id, movie_id, influencing_users
+                    # )
                     
                     scored_movies.append({
                         'movie_id': movie_id,
-                        'score': score,
-                        'reason': reason,
-                        'influencing_users': influencing_users,
-                        'potential_matches': potential_matches,
+                        'score': 90,
+                        'reason': 'Popularity',
+                        'influencing_users': [],
+                        'potential_matches': [],
                         'features': movie_features
                     })
                 except Exception as e:
@@ -147,9 +146,11 @@ class RecommendationEngine:
             logger.error(f"Unexpected error in generate_recommendations for user {user_id}: {str(e)}")
             raise RecommendationEngineError(f"Failed to generate recommendations: {str(e)}")
     
-    @timed
-    def _get_user_profile_optimized(self, user_id: int) -> Dict:
+    def _get_user_profile(self, user_id: int) -> Dict:
         """Get comprehensive user profile using materialized view for better performance"""
+        recentPreferenceCount = 50
+        recentRatingCount = 30
+
         try:
             profile = {
                 'user_id': user_id,
@@ -159,39 +160,84 @@ class RecommendationEngine:
                 'language_preferences': [],
                 'stats': {}
             }
-            
-            # First, get stats from materialized view
-            stats_query = text("""
-                SELECT 
-                    total_preferences,
-                    total_ratings,
-                    avg_rating,
-                    liked_movies,
-                    superliked_movies,
-                    disliked_movies,
-                    preferred_genres
-                FROM user_interaction_summary
+
+            preference_query = text("""
+                SELECT count(*), preference
+                FROM movie_preferences
+                WHERE user_id = :user_id
+                GROUP BY preference           
+            """)
+            preference_result = self.db.execute(preference_query, {'user_id': user_id}).fetchall()
+            if preference_result:
+                total_preferences = 0
+                for count, preference in preference_result:
+                    total_preferences += count
+                    if preference == 'LIKE':
+                        profile['stats']['liked_movies'] = count or 0
+                    elif preference == 'SUPERLIKE':
+                        profile['stats']['superliked_movies'] = count or 0
+                    elif preference == 'DISLIKE':
+                        profile['stats']['disliked_movies'] = count or 0
+
+                profile['stats']['total_preferences'] = total_preferences
+
+            rating_count_query = text("""
+                SELECT count(*) as total_ratings, avg(rating) as avg_rating
+                FROM movie_ratings
                 WHERE user_id = :user_id
             """)
-            
-            stats_result = self.db.execute(stats_query, {'user_id': user_id}).fetchone()
-            
-            if stats_result:
-                profile['stats'] = {
-                    'total_preferences': stats_result[0] or 0,
-                    'total_ratings': stats_result[1] or 0,
-                    'avg_rating': float(stats_result[2] or 0),
-                    'liked_movies': stats_result[3] or 0,
-                    'superliked_movies': stats_result[4] or 0,
-                    'disliked_movies': stats_result[5] or 0
-                }
-                profile['genres'] = stats_result[6] or []
+            rating_count_result = self.db.execute(rating_count_query, {'user_id': user_id}).fetchone()
+            if rating_count_result:
+                profile['stats']['total_ratings'] = rating_count_result.total_ratings or 0
+                profile['stats']['avg_rating'] = rating_count_result.avg_rating or 0
+
+            # Get Preferred Genres
+            preferred_genres_query = text("""
+                SELECT genre_id
+                FROM user_genres
+                WHERE user_id = :user_id
+            """)
+            preferred_genres_result = self.db.execute(preferred_genres_query, {'user_id': user_id}).fetchall()
+            if preferred_genres_result:
+                profile['genres'] = [genre_id for genre_id, in preferred_genres_result]
+
+            # Get similar users
+            similar_users_query = text("""
+                SELECT matched_user_id
+                FROM matches
+                WHERE user_id = :user_id
+            """)
+            similar_users_result = self.db.execute(similar_users_query, {'user_id': user_id}).fetchall()
+            if similar_users_result:
+                profile['similar_users'] = [user_id for user_id, in similar_users_result]
+
+            # Get language preferences
+            language_preferences_query = text("""
+                SELECT language_code
+                FROM user_languages
+                WHERE user_id = :user_id
+            """)
+            language_preferences_result = self.db.execute(language_preferences_query, {'user_id': user_id}).fetchall()
+            if language_preferences_result:
+                profile['language_preferences'] = [language_code for language_code, in language_preferences_result]
             
             # Get detailed user interactions
             interactions_query = text("""
-                SELECT movie_id, rating, NULL as preference FROM movie_ratings WHERE user_id = :user_id
+                SELECT movie_id, rating, NULL as preference
+                FROM (
+                    SELECT movie_id, rating
+                    FROM movie_ratings
+                    WHERE user_id = :user_id
+                ) r
+
                 UNION ALL
-                SELECT movie_id, NULL as rating, preference FROM movie_preferences WHERE user_id = :user_id
+
+                SELECT movie_id, NULL as rating, preference
+                FROM (
+                    SELECT movie_id, preference
+                    FROM movie_preferences
+                    WHERE user_id = :user_id
+                ) p;
             """)
             
             results = self.db.execute(interactions_query, {'user_id': user_id}).fetchall()
@@ -209,43 +255,6 @@ class RecommendationEngine:
                 else:
                     profile['interactions'][movie_id] = weight
             
-            # Get similar users using the SQL function
-            similar_users_query = text("""
-                WITH matched_users AS (
-                    SELECT 
-                        CASE 
-                            WHEN user_id = :user_id THEN matched_user_id 
-                            ELSE user_id 
-                        END as matched_user_id
-                    FROM matches
-                    WHERE :user_id IN (user_id, matched_user_id)
-                )
-                SELECT 
-                    mu.matched_user_id,
-                    get_user_similarity(:user_id, mu.matched_user_id) as similarity_score
-                FROM matched_users mu
-                WHERE get_user_similarity(:user_id, mu.matched_user_id) >= :threshold
-                ORDER BY similarity_score DESC
-                LIMIT 20
-            """)
-            
-            similar_results = self.db.execute(
-                similar_users_query, 
-                {'user_id': user_id, 'threshold': settings.MATCH_THRESHOLD}
-            ).fetchall()
-            
-            profile['similar_users'] = [(row[0], float(row[1])) for row in similar_results if row[1] is not None]
-            
-            logger.info(f"User {user_id} profile: {len(profile['interactions'])} interactions, "
-                       f"{len(profile['similar_users'])} matched similar users, "
-                       f"{len(profile['genres'])} preferred genres")
-            
-            # Get language preferences
-            lang_query = text("""
-                SELECT language_code FROM user_languages WHERE user_id = :user_id
-            """)
-            profile['language_preferences'] = [row[0] for row in self.db.execute(lang_query, {'user_id': user_id}).fetchall()]
-            
             logger.info(f"User {user_id} Profile: {profile}")
             return profile
             
@@ -253,7 +262,6 @@ class RecommendationEngine:
             logger.error(f"Error getting user profile for user {user_id}: {str(e)}")
             raise RecommendationEngineError(f"Failed to get user profile: {str(e)}")
     
-    @timed
     def _get_candidate_movies(self, user_id: int, user_profile: Dict) -> Set[int]:
         """Get candidate movies for recommendation with improved genre focus"""
         try:
@@ -268,7 +276,7 @@ class RecommendationEngine:
             # 1. Movies from preferred genres (HIGH PRIORITY)
             if user_profile['genres']:
                 # For better genre-based recommendations, get more candidates
-                limit = 500 if is_cold_start else 300
+                limit = settings.CACHE_SIZE if is_cold_start else settings.CACHE_SIZE
                 
                 genre_movies_query = text("""
                     SELECT mlg.movie_id, COUNT(DISTINCT mlg.genre_id) as matching_genres, m.popularity
@@ -296,120 +304,90 @@ class RecommendationEngine:
                 candidates.update(row[0] for row in results)
                 logger.info(f"Added {len(results)} movies from preferred genres")
             
-            # 2. Movies from similar movies (using movie_similarities table)
-            if user_profile['interactions']:
-                # Get movies similar to user's highly rated movies
-                similar_movies_query = text("""
-                    SELECT DISTINCT 
-                        CASE 
-                            WHEN ms.movie_id_1 = ANY(:liked_movies) THEN ms.movie_id_2
-                            ELSE ms.movie_id_1
-                        END as similar_movie_id,
-                        ms.similarity_score
-                    FROM movie_similarities ms
-                    WHERE (ms.movie_id_1 = ANY(:liked_movies) OR ms.movie_id_2 = ANY(:liked_movies))
-                        AND ms.similarity_score >= 0.5
-                        AND CASE 
-                            WHEN ms.movie_id_1 = ANY(:liked_movies) THEN ms.movie_id_2
-                            ELSE ms.movie_id_1
-                        END NOT IN :interacted_movies
-                    ORDER BY ms.similarity_score DESC
-                    LIMIT 200
-                """).bindparams(bindparam("interacted_movies", expanding=True))
+            # # 2. Movies from similar movies (using movie_similarities table)
+            # if user_profile['interactions']:
+            #     # Get movies similar to user's highly rated movies
+            #     similar_movies_query = text("""
+            #         SELECT DISTINCT 
+            #             CASE 
+            #                 WHEN ms.movie_id_1 = ANY(:liked_movies) THEN ms.movie_id_2
+            #                 ELSE ms.movie_id_1
+            #             END as similar_movie_id,
+            #             ms.similarity_score
+            #         FROM movie_similarities ms
+            #         WHERE (ms.movie_id_1 = ANY(:liked_movies) OR ms.movie_id_2 = ANY(:liked_movies))
+            #             AND ms.similarity_score >= 0.5
+            #             AND CASE 
+            #                 WHEN ms.movie_id_1 = ANY(:liked_movies) THEN ms.movie_id_2
+            #                 ELSE ms.movie_id_1
+            #             END NOT IN :interacted_movies
+            #         ORDER BY ms.similarity_score DESC
+            #         LIMIT 200
+            #     """).bindparams(bindparam("interacted_movies", expanding=True))
                 
-                # Get user's liked movies (positive interactions)
-                liked_movies = [movie_id for movie_id, score in user_profile['interactions'].items() if score > 1.0]
+            #     # Get user's liked movies (positive interactions)
+            #     liked_movies = [movie_id for movie_id, score in user_profile['interactions'].items() if score > 1.0]
                 
-                if liked_movies:
-                    results = self.db.execute(
-                        similar_movies_query,
-                        {
-                            'liked_movies': liked_movies[:50],  # Top 50 liked movies
-                            'interacted_movies': list(interacted_movies) or [-1]
-                        }
-                    ).fetchall()
+            #     if liked_movies:
+            #         results = self.db.execute(
+            #             similar_movies_query,
+            #             {
+            #                 'liked_movies': liked_movies[:50],  # Top 50 liked movies
+            #                 'interacted_movies': list(interacted_movies) or [-1]
+            #             }
+            #         ).fetchall()
                     
-                    candidates.update(row[0] for row in results)
-                    logger.info(f"Added {len(results)} movies from movie similarities")
+            #         candidates.update(row[0] for row in results)
+            #         logger.info(f"Added {len(results)} movies from movie similarities")
             
-            # 3. Movies from similar users (if not cold start)
-            if user_profile['similar_users'] and not is_cold_start:
-                similar_users_movies_query = text("""
-                    SELECT DISTINCT m.movie_id, COUNT(DISTINCT m.user_id) as user_count
-                    FROM (
-                        SELECT movie_id, user_id FROM movie_ratings 
-                        WHERE user_id = ANY(:user_ids) AND rating >= 4
-                        UNION
-                        SELECT movie_id, user_id FROM movie_preferences
-                        WHERE user_id = ANY(:user_ids) 
-                            AND preference IN ('LIKE', 'SUPERLIKE')
-                    ) m
-                    WHERE m.movie_id NOT IN :interacted_movies
-                    GROUP BY m.movie_id
-                    ORDER BY user_count DESC
-                    LIMIT 200
-                """).bindparams(bindparam("interacted_movies", expanding=True))
+            # # 3. Movies from similar users (if not cold start)
+            # if user_profile['similar_users'] and not is_cold_start:
+            #     similar_users_movies_query = text("""
+            #         SELECT DISTINCT m.movie_id, COUNT(DISTINCT m.user_id) as user_count
+            #         FROM (
+            #             SELECT movie_id, user_id FROM movie_ratings 
+            #             WHERE user_id = ANY(:user_ids) AND rating >= 4
+            #             UNION
+            #             SELECT movie_id, user_id FROM movie_preferences
+            #             WHERE user_id = ANY(:user_ids) 
+            #                 AND preference IN ('LIKE', 'SUPERLIKE')
+            #         ) m
+            #         WHERE m.movie_id NOT IN :interacted_movies
+            #         GROUP BY m.movie_id
+            #         ORDER BY user_count DESC
+            #         LIMIT 200
+            #     """).bindparams(bindparam("interacted_movies", expanding=True))
                 
-                similar_user_ids = [u[0] for u in user_profile['similar_users']]
-                results = self.db.execute(
-                    similar_users_movies_query,
-                    {
-                        'user_ids': similar_user_ids,
-                        'interacted_movies': list(interacted_movies) or [-1]
-                    }
-                ).fetchall()
+            #     similar_user_ids = [u[0] for u in user_profile['similar_users']]
+            #     results = self.db.execute(
+            #         similar_users_movies_query,
+            #         {
+            #             'user_ids': similar_user_ids,
+            #             'interacted_movies': list(interacted_movies) or [-1]
+            #         }
+            #     ).fetchall()
                 
-                candidates.update(row[0] for row in results)
-                logger.info(f"Added {len(results)} movies from similar users")
+            #     candidates.update(row[0] for row in results)
+            #     logger.info(f"Added {len(results)} movies from similar users")
             
-            # 4. Popular movies in user's genres with language preference
-            if user_profile['genres']:
-                popular_genre_query = text("""
-                    SELECT m.id
-                    FROM movies m
-                    JOIN movie_genre_links mlg ON m.id = mlg.movie_id
-                    WHERE mlg.genre_id = ANY(:genre_ids)
-                        AND m.id NOT IN :interacted_movies
-                        AND m.vote_average >= 6.0
-                        AND m.vote_count >= 100
-                        AND m.adult != TRUE
-                        AND m.original_language = 'en'
-                        AND (:has_lang_pref = FALSE OR m.original_language = ANY(:lang_prefs))
-                    GROUP BY m.id
-                    ORDER BY m.popularity DESC
-                    LIMIT 150
-                """).bindparams(bindparam("interacted_movies", expanding=True))
-                
-                results = self.db.execute(
-                    popular_genre_query,
-                    {
-                        'genre_ids': user_profile['genres'],
-                        'interacted_movies': list(interacted_movies) or [-1],
-                        'has_lang_pref': len(user_profile['language_preferences']) > 0,
-                        'lang_prefs': user_profile['language_preferences'] or ['en']
-                    }
-                ).fetchall()
-                
-                candidates.update(row[0] for row in results)
-                logger.info(f"Added {len(results)} popular movies from user's genres")
             
-            # 5. Trending movies (smaller portion)
-            trending_limit = 30
-            trending_query = text("""
-                SELECT id
-                FROM movies 
-                WHERE id NOT IN :interacted_movies
-                    -- AND vote_average >= 6.0 -- Filter out low-rated movies
-                    AND original_language = 'en'
-                    AND adult != TRUE
-                ORDER BY popularity DESC
-                LIMIT :limit
-            """).bindparams(bindparam("interacted_movies", expanding=True))
+            # # 4. Trending movies (smaller portion)
+            # trending_limit = 40
+            # trending_query = text("""
+            #     SELECT id
+            #     FROM movies 
+            #     WHERE id NOT IN :interacted_movies
+            #         -- AND vote_average >= 6.0 -- Filter out low-rated movies
+            #         AND original_language = 'en'
+            #         AND adult != TRUE
+            #     ORDER BY popularity DESC
+            #     LIMIT :limit
+            # """).bindparams(bindparam("interacted_movies", expanding=True))
             
-            results = self.db.execute(
-                trending_query,
-                {'interacted_movies': list(interacted_movies) or [-1], 'limit': trending_limit}
-            ).fetchall()
+            # results = self.db.execute(
+            #     trending_query,
+            #     {'interacted_movies': list(interacted_movies) or [-1], 'limit': trending_limit}
+            # ).fetchall()
             
             candidates.update(row[0] for row in results)
             logger.info(f"Added {len(results)} trending movies")
@@ -422,7 +400,6 @@ class RecommendationEngine:
             logger.error(f"Error getting candidate movies for user {user_id}: {str(e)}")
             raise RecommendationEngineError(f"Failed to get candidate movies: {str(e)}")
     
-    @timed
     def _get_movie_features(self, movie_id: int) -> Dict:
         """Get comprehensive features for a movie"""
         try:
@@ -488,7 +465,6 @@ class RecommendationEngine:
             logger.error(f"Error getting movie features for movie {movie_id}: {str(e)}")
             return {}
     
-    @timed
     def _get_cached_recommendations(self, user_id: int) -> List[MovieRecommendation]:
         """Get cached recommendations if available"""
         try:
@@ -554,7 +530,6 @@ class RecommendationEngine:
             logger.error(f"Error getting cached recommendations for user {user_id}: {str(e)}")
             return []
     
-    @timed
     def _cache_recommendations(self, user_id: int, recommendations: List[MovieRecommendation]):
         """Cache recommendations for future use"""
         try:

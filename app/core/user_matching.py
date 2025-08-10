@@ -14,7 +14,6 @@ class UserMatcher:
     def __init__(self, db: Session):
         self.db = db
     
-    @timed
     def get_potential_matches(
         self, 
         user_id: int, 
