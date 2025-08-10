@@ -420,6 +420,7 @@ class RecommendationScorer:
             logger.error(f"Error calculating content-based score: {str(e)}")
             return 0.0
     
+    @timed
     def _genre_based_score(self, movie_genres: List[int], user_genres: List[int]) -> float:
         """
         Calculate genre-based score for a movie with improved scoring
@@ -468,6 +469,7 @@ class RecommendationScorer:
             logger.error(f"Error calculating genre-based score: {str(e)}")
             return 0.0
     
+    @timed
     def _calculate_quality_score(self, movie_features: MovieFeatures) -> float:
         """Calculate quality score based on ratings and vote count"""
         try:
