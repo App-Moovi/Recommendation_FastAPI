@@ -255,21 +255,21 @@ class RecommendationScorer:
                     reasons.append("Users with similar taste loved this")
             
             # 2. Content-Based Score
-            if len(user_interactions) > 0 and weights.get('content', 0) > 0:
-                # Fetch features for user's interacted movies for content-based scoring
-                user_movie_features = self._get_user_movie_features(user_interactions)
-                cb_score = self._content_based_score(
-                    movie_id, user_interactions, movie_features, user_movie_features
-                )
+            # if len(user_interactions) > 0 and weights.get('content', 0) > 0:
+            #     # Fetch features for user's interacted movies for content-based scoring
+            #     user_movie_features = self._get_user_movie_features(user_interactions)
+            #     cb_score = self._content_based_score(
+            #         movie_id, user_interactions, movie_features, user_movie_features
+            #     )
                 
-                if cb_score > 0:
-                    scores.append(('content', cb_score * weights['content']))
-                    if cb_score > 0.7:
-                        reasons.append("Very similar to movies you enjoyed")
-                    else:
-                        reasons.append("Similar to movies you enjoyed")
+            #     if cb_score > 0:
+            #         scores.append(('content', cb_score * weights['content']))
+            #         if cb_score > 0.7:
+            #             reasons.append("Very similar to movies you enjoyed")
+            #         else:
+            #             reasons.append("Similar to movies you enjoyed")
                 
-                logger.debug(f'Content-based score for movie {movie_id}: {cb_score:.3f}')
+            #     logger.debug(f'Content-based score for movie {movie_id}: {cb_score:.3f}')
             
             # 3. Genre-Based Score (improved scoring)
             if user_genres and weights.get('genre', 0) > 0:
