@@ -7,7 +7,6 @@ from app.utils.logger import timed
 class DiversityOptimizer:
     """Ensure diversity in recommendations"""
 
-    @timed    
     def optimize_diversity(
         self, 
         scored_movies: List[Dict], 
@@ -78,7 +77,6 @@ class DiversityOptimizer:
         
         return groups
     
-    @timed
     def _passes_diversity_check(
         self, 
         movie: Dict,
