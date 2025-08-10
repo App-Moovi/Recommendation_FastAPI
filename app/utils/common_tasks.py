@@ -5,6 +5,7 @@ from app.database import SessionLocal
 from sqlalchemy.orm import Session
 from collections import defaultdict
 from app.models.schemas import MovieFeatures
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ class CommonTasks:
                         'genre': movie[3],
                         'popularity': float(movie[4]) if movie[4] is not None else 0.0,
                         'vote_average': float(movie[5]) if movie[5] is not None else 0.0,
-                        'release_date': movie[6],
+                        'release_date': movie[6] if movie[6] is not None else datetime(1900, 1, 1),
                         'language': movie[7],
                         'runtime': movie[8],
                         'vote_count': movie[9]
