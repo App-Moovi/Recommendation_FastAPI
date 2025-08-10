@@ -18,15 +18,15 @@ class TaskScheduler:
             logger.info("Background jobs are disabled")
             return
         
-        self.scheduler.add_job(
-            BackgroundTasks.testing,
-            CronTrigger(minute='*/1'),  # Every 30 minutes
-            id='testing',
-            name='Testing',
-            max_instances=1,  # Prevent overlaps
-            coalesce=True,
-            replace_existing=True
-        )
+        # self.scheduler.add_job(
+        #     BackgroundTasks.testing,
+        #     CronTrigger(minute='*/1'),  # Every 30 minutes
+        #     id='testing',
+        #     name='Testing',
+        #     max_instances=1,  # Prevent overlaps
+        #     coalesce=True,
+        #     replace_existing=True
+        # )
         
         # Safe job: Compute user similarities in batches (daily at 3 AM)
         self.scheduler.add_job(
