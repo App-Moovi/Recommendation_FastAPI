@@ -46,3 +46,19 @@ class RecommendationRequest(BaseModel):
     user_id: int
     force_refresh: bool = False
     include_movie_details: bool = True
+
+class MovieFeatures(BaseModel):
+    movie_id: int
+    title: str
+    overview: str
+    language: str
+    genre: str
+    genres: List[int]
+    popularity: float
+    release_date: datetime
+    vote_average: float
+    runtime: int
+    vote_count: int
+    year: int
+    cast_ids: List[int]
+    production_companies: List[int]

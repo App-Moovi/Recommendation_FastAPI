@@ -1,7 +1,9 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, ARRAY, Text, Boolean, DECIMAL
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, ARRAY, Text, DECIMAL, text, bindparam
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import List, Tuple, Optional
+from sqlalchemy.orm import Session
+from app.database import SessionLocal
 
 Base = declarative_base()
 
@@ -40,10 +42,43 @@ class PotentialMatches(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime, nullable=False)
 
+# Stub definition (no other columns needed)
+class Movies(Base):
+    __tablename__ = "movies"
+
+    id = Column(Integer, primary_key=True)
+
 class MovieSimilarities(Base):
     __tablename__ = "movie_similarities"
     
     movie_id_1 = Column(Integer, ForeignKey("movies.id", ondelete="CASCADE"), primary_key=True)
     movie_id_2 = Column(Integer, ForeignKey("movies.id", ondelete="CASCADE"), primary_key=True)
     similarity_score = Column(DECIMAL(5, 4), nullable=False)
-    last_calculated = Column(DateTime, default=datetime.utcnow)
+    last_calculated = Column(DateTime, default=datetime.now(timezone.utc))
+
+    def __repr__(self):
+        return f"MovieSimilarities(movie_id_1={self.movie_id_1}, movie_id_2={self.movie_id_2}, similarity_score={self.similarity_score})"
+
+    @staticmethod
+    def get_movie_similarity(movie1_id: int, movie2_id: int, db: Optional[Session] = None) -> float:
+        db = db or SessionLocal()
+        try:
+            score = db.query(MovieSimilarities).filter(MovieSimilarities.movie_id_1 == movie1_id, MovieSimilarities.movie_id_2 == movie2_id).one().similarity_score
+            return float(score)
+        except Exception as e:
+            raise e
+        
+    @staticmethod
+    def list_movie_similarities(combinations: List[Tuple[int, int]], db: Optional[Session] = None) -> List[Tuple[int, int, float]]:
+        db = db or SessionLocal()
+        try:
+            similarity_query = text("""
+                SELECT movie_id_1, movie_id_2, similarity_score
+                FROM movie_similarities
+                WHERE (movie_id_1, movie_id_2) IN :combinations
+            """).bindparams(bindparam("combinations", expanding=True))
+
+            similarities = db.execute(similarity_query, {"combinations": combinations}).fetchall()
+            return list(map(lambda x: (int(x[0]), int(x[1]), float(x[2])), similarities))
+        except Exception as e:
+            raise e

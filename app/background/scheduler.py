@@ -18,17 +18,15 @@ class TaskScheduler:
             logger.info("Background jobs are disabled")
             return
         
-        # EMERGENCY FIX: Commented out dangerous jobs that cause O(n²) performance issues
-        # DO NOT RE-ENABLE without implementing batch processing
-        
-        # # Daily tasks at midnight - DISABLED DUE TO PERFORMANCE ISSUES
-        # self.scheduler.add_job(
-        #     BackgroundTasks.compute_all_user_similarities,
-        #     CronTrigger(minute='*/30'),  # This is extremely dangerous!
-        #     id='compute_user_similarities',
-        #     name='Compute User Similarities',
-        #     replace_existing=True
-        # )
+        self.scheduler.add_job(
+            BackgroundTasks.testing,
+            CronTrigger(minute='*/1'),  # Every 30 minutes
+            id='testing',
+            name='Testing',
+            max_instances=1,  # Prevent overlaps
+            coalesce=True,
+            replace_existing=True
+        )
         
         # Safe job: Compute user similarities in batches (daily at 3 AM)
         self.scheduler.add_job(
@@ -44,7 +42,7 @@ class TaskScheduler:
         # Safe job: Compute movie similarities (daily at 4 AM)
         self.scheduler.add_job(
             BackgroundTasks.compute_movie_similarities,
-            CronTrigger(hour=4, minute=0),  # Daily at 4 AM
+            CronTrigger(hour=4),  # Daily at 4 AM
             id='compute_movie_similarities',
             name='Compute Movie Similarities',
             max_instances=1,  # Prevent overlaps
