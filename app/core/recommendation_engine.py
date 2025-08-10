@@ -11,6 +11,8 @@ from app.utils.constants import InteractionWeights, MatchingThresholds
 from app.config import settings
 from app.utils.logger import timed
 from app.utils.common_tasks import commonTasks
+from app.models.database_models import MovieSimilarities
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -70,18 +72,32 @@ class RecommendationEngine:
             # Score all candidates
             scored_movies = []
             all_movie_features = commonTasks.get_movies_features(list(candidate_movies), db=self.db)
+            interacted_movie_combinations = set()
+            for candidate in candidate_movies:
+                for interaction in user_profile['interactions'].keys():
+                    interacted_movie_combinations.add((candidate, interaction))
+
+            interacted_movie_similarities = MovieSimilarities.list_movie_similarities(list(interacted_movie_combinations), db=self.db)
+            interacted_movie_table = defaultdict(dict)
+
+            for similarity in interacted_movie_similarities:
+                movie_id_1, movie_id_2, similarity_score = similarity
+                interacted_movie_table[movie_id_1][movie_id_2] = similarity_score
+
             for movie_features in all_movie_features:
                 movie_id = movie_features.movie_id
+                interacted_similarities_for_movie = interacted_movie_table[movie_id]
 
                 try:
                     # Use improved scoring with better weights
                     score, influencing_users, reason = self.scorer.score_movie_for_user(
-                        user_id,
-                        movie_features,
-                        user_profile['interactions'],
-                        user_profile['similar_users'],
-                        user_profile['genres'],
-                        weights
+                        user_id=user_id,
+                        movie_features=movie_features,
+                        user_interactions=user_profile['interactions'],
+                        similar_users=user_profile['similar_users'],
+                        interacted_scores=interacted_similarities_for_movie,
+                        user_genres=user_profile['genres'],
+                        weights=weights
                     )
                     
                     # TODO - Implement user matching

@@ -196,6 +196,7 @@ class RecommendationScorer:
         movie_features: MovieFeatures,
         user_interactions: Dict[int, float],
         similar_users: List[Tuple[int, float]],
+        interacted_scores: Dict[int, float],
         user_genres: List[int] = None,
         weights: Dict[str, float] = None
     ) -> Tuple[float, List[int], str]:
@@ -258,7 +259,7 @@ class RecommendationScorer:
             # 2. Content-Based Score
             if len(user_interactions) > 0 and weights.get('content', 0) > 0:
                 cb_score = self._content_based_score(
-                    movie_id, user_interactions
+                    movie_id, user_interactions, interacted_scores
                 )
                 
                 if cb_score > 0:
@@ -378,7 +379,8 @@ class RecommendationScorer:
     def _content_based_score(
         self,
         movie_id: int,
-        user_interactions: Dict[int, float]
+        user_interactions: Dict[int, float],
+        interacted_scores: Dict[int, float]
     ) -> float:
         """Calculate content-based score"""
         try:
@@ -386,19 +388,14 @@ class RecommendationScorer:
                 return 0.0
             
             similarity_scores = []
-            movie_combinations: List[Tuple[int, int]] = []
             
             # Compare with user's positively rated movies
             for liked_movie_id, interaction_score in user_interactions.items():
                 if interaction_score > 0 and liked_movie_id != movie_id:
-                    movie_combinations.append((movie_id, liked_movie_id))
-                    
-            movie_scores = MovieSimilarities.list_movie_similarities(movie_combinations)
-            
-            for _, _, similarity_score in movie_scores:
-                # Weight by user's interaction score
-                weighted_sim = similarity_score * (interaction_score / 3)
-                similarity_scores.append(weighted_sim)
+                    # Weight by user's interaction score
+                    similarity_score = interacted_scores.get(liked_movie_id, 0)
+                    weighted_sim = similarity_score * (interaction_score / 3)
+                    similarity_scores.append(weighted_sim)
             
             if not similarity_scores:
                 return 0.0
