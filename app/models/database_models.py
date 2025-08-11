@@ -71,6 +71,11 @@ class MovieSimilarities(Base):
     @staticmethod
     def list_movie_similarities(combinations: List[Tuple[int, int]], db: Optional[Session] = None) -> List[Tuple[int, int, float]]:
         db = db or SessionLocal()
+
+        print(combinations)
+        if not combinations:
+            return []
+
         try:
             similarity_query = text("""
                 SELECT movie_id_1, movie_id_2, similarity_score
