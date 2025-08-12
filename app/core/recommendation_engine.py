@@ -48,6 +48,7 @@ class RecommendationEngine:
             weights: Custom weights for scoring components
         """
         try:
+            logger.info(f"Generating recommendations in recommendation engine for user {user_id}")
             # Check if we need to use cached recommendations
             if not force_refresh:
                 cached = self._get_cached_recommendations(user_id)
@@ -165,6 +166,8 @@ class RecommendationEngine:
         """Get comprehensive user profile using materialized view for better performance"""
         recentPreferenceCount = 50
         recentRatingCount = 30
+
+        logger.info(f"Generating user profile for user {user_id}")
 
         try:
             profile = {
@@ -292,7 +295,7 @@ class RecommendationEngine:
             # 1. Movies from preferred genres (HIGH PRIORITY)
             if user_profile['genres']:
                 # For better genre-based recommendations, get more candidates
-                limit = 200 if is_cold_start else 100
+                limit = 150 if is_cold_start else 100
                 
                 genre_movies_query = text("""
                     SELECT mlg.movie_id, COUNT(DISTINCT mlg.genre_id) as matching_genres, m.popularity
@@ -322,6 +325,8 @@ class RecommendationEngine:
             
             # 2. Movies from similar movies (using movie_similarities table)
             if user_profile['interactions']:
+                interaction_limit = 50
+
                 # Get movies similar to user's highly rated movies
                 similar_movies_query = text("""
                     SELECT DISTINCT 
@@ -338,7 +343,7 @@ class RecommendationEngine:
                             ELSE ms.movie_id_1
                         END NOT IN :interacted_movies
                     ORDER BY ms.similarity_score DESC
-                    LIMIT 200
+                    LIMIT :limit
                 """).bindparams(bindparam("interacted_movies", expanding=True))
                 
                 # Get user's liked movies (positive interactions)
@@ -349,7 +354,8 @@ class RecommendationEngine:
                         similar_movies_query,
                         {
                             'liked_movies': liked_movies[:50],  # Top 50 liked movies
-                            'interacted_movies': list(interacted_movies) or [-1]
+                            'interacted_movies': list(interacted_movies) or [-1],
+                            'limit': interaction_limit
                         }
                     ).fetchall()
                     
@@ -358,6 +364,8 @@ class RecommendationEngine:
             
             # 3. Movies from similar users (if not cold start)
             if user_profile['similar_users'] and not is_cold_start:
+                similar_limit = 50
+
                 similar_users_movies_query = text("""
                     SELECT DISTINCT m.movie_id, COUNT(DISTINCT m.user_id) as user_count
                     FROM (
@@ -371,7 +379,7 @@ class RecommendationEngine:
                     WHERE m.movie_id NOT IN :interacted_movies
                     GROUP BY m.movie_id
                     ORDER BY user_count DESC
-                    LIMIT 200
+                    LIMIT :limit
                 """).bindparams(bindparam("interacted_movies", expanding=True))
                 
                 similar_user_ids = [u[0] for u in user_profile['similar_users']]
@@ -379,7 +387,8 @@ class RecommendationEngine:
                     similar_users_movies_query,
                     {
                         'user_ids': similar_user_ids,
-                        'interacted_movies': list(interacted_movies) or [-1]
+                        'interacted_movies': list(interacted_movies) or [-1],
+                        'limit': similar_limit
                     }
                 ).fetchall()
                 

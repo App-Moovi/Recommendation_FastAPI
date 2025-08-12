@@ -14,8 +14,9 @@ from app.background.user_stats import AsyncUserStatsManager
 from app.core.recommendation_engine import RecommendationEngine
 from app.api.dependencies import get_current_user_id
 from app.config import settings
+import logging
 
-
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
 @router.post("/", response_model=RecommendationResponse)
@@ -30,15 +31,20 @@ async def get_recommendations(
     - **force_refresh**: Force regeneration of recommendations (default: False)
     - **include_movie_details**: Include movie details in response (default: True)
     """
+
+    logger.info(f"Generating recommendations for user {request.user_id}")
+
     try:
         # Validate user exists
         user_check = db.execute(
             text("SELECT id FROM users WHERE id = :user_id"),
-            {"user_id": request.user_id}
+            {"user_id": int(request.user_id)}
         ).fetchone()
         
         if not user_check:
             raise HTTPException(status_code=404, detail="User not found")
+        
+        logger.info(f"User {request.user_id} exists, continuing....")
         
         # Initialize recommendation engine
         engine = RecommendationEngine(db)
@@ -69,6 +75,7 @@ async def get_recommendations(
         )
         
     except Exception as e:
+        print(e)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{user_id}/next", response_model=RecommendationResponse)
