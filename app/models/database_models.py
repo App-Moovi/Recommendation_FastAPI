@@ -76,13 +76,22 @@ class MovieSimilarities(Base):
             return []
 
         try:
+            batch_size = 1000
+        
+            similarities = []
+            combination_length = len(combinations)
+        
             similarity_query = text("""
                 SELECT movie_id_1, movie_id_2, similarity_score
                 FROM movie_similarities
                 WHERE (movie_id_1, movie_id_2) IN :combinations
             """).bindparams(bindparam("combinations", expanding=True))
 
-            similarities = db.execute(similarity_query, {"combinations": combinations}).fetchall()
-            return list(map(lambda x: (int(x[0]), int(x[1]), float(x[2])), similarities))
+            for i in range(0, combination_length, batch_size):
+                batch = combinations[i : i + batch_size]
+                result = db.execute(similarity_query, {"combinations": batch}).fetchall()
+                similarities.extend(list(map(lambda x: (int(x[0]), int(x[1]), float(x[2])), result)))
+
+            return similarities
         except Exception as e:
             raise e
