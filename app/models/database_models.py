@@ -72,7 +72,6 @@ class MovieSimilarities(Base):
     def list_movie_similarities(combinations: List[Tuple[int, int]], db: Optional[Session] = None) -> List[Tuple[int, int, float]]:
         db = db or SessionLocal()
 
-        print(combinations)
         if not combinations:
             return []
 
