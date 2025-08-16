@@ -196,7 +196,7 @@ class RecommendationScorer:
         movie_features: MovieFeatures,
         user_interactions: Dict[int, float],
         similar_users: List[Tuple[int, float]],
-        interacted_scores: Dict[int, float],
+        interacted_movie_features: Dict[int, Dict[MovieFeatures, float]],
         user_genres: List[int] = None,
         weights: Dict[str, float] = None
     ) -> Tuple[float, List[int], str]:
@@ -259,7 +259,7 @@ class RecommendationScorer:
             # 2. Content-Based Score
             if len(user_interactions) > 0 and weights.get('content', 0) > 0:
                 cb_score = self._content_based_score(
-                    movie_id, user_interactions, interacted_scores
+                    movie_id=movie_id, movie_feature=movie_features, interacted_movie_features=interacted_movie_features
                 )
                 
                 if cb_score > 0:
@@ -379,21 +379,23 @@ class RecommendationScorer:
     def _content_based_score(
         self,
         movie_id: int,
-        user_interactions: Dict[int, float],
-        interacted_scores: Dict[int, float]
+        movie_feature: MovieFeatures,
+        interacted_movie_features: Dict[int, Dict[MovieFeatures, float]]
     ) -> float:
         """Calculate content-based score"""
         try:
-            if not user_interactions:
+            if not movie_feature or not interacted_movie_features:
                 return 0.0
             
             similarity_scores = []
-            
-            # Compare with user's positively rated movies
-            for liked_movie_id, interaction_score in user_interactions.items():
-                if interaction_score > 0 and liked_movie_id != movie_id:
-                    # Weight by user's interaction score
-                    similarity_score = interacted_scores.get(liked_movie_id, 0)
+
+            for interacted_movie_id, movie_data in interacted_movie_features.items():
+                interacted_movie_feature = movie_data.get("features", {})
+                interaction_score = movie_data.get("interaction_score", 0)
+
+                if interacted_movie_id != movie_id and interacted_movie_feature and interaction_score:
+                    # Calculate cosine similarity
+                    similarity_score = self.similarity_calculator.calculate_movie_similarity(movie_feature, interacted_movie_feature)
                     weighted_sim = similarity_score * (interaction_score / 3)
                     similarity_scores.append(weighted_sim)
             

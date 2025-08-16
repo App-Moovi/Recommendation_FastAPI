@@ -78,16 +78,22 @@ class RecommendationEngine:
                 for interaction in user_profile['interactions'].keys():
                     interacted_movie_combinations.add((candidate, interaction))
 
-            interacted_movie_similarities = MovieSimilarities.list_movie_similarities(list(interacted_movie_combinations), db=self.db)
-            interacted_movie_table = defaultdict(dict)
+            interacted_movie_features = commonTasks.get_movies_features(list(user_profile.get('interactions', {}).keys()), db=self.db)
+            interaction_lookup_table = defaultdict(dict)
 
-            for similarity in interacted_movie_similarities:
-                movie_id_1, movie_id_2, similarity_score = similarity
-                interacted_movie_table[movie_id_1][movie_id_2] = similarity_score
+            for movie_features in interacted_movie_features:
+                movie_id = movie_features.movie_id
+                interaction_score = user_profile.get('interactions', {}).get(movie_id, 0)
+                if not interaction_score:
+                    continue
+
+                interaction_lookup_table[movie_id] = {
+                    'features': movie_features,
+                    'interaction_score': interaction_score
+                }
 
             for movie_features in all_movie_features:
                 movie_id = movie_features.movie_id
-                interacted_similarities_for_movie = interacted_movie_table[movie_id]
 
                 try:
                     # Use improved scoring with better weights
@@ -96,7 +102,7 @@ class RecommendationEngine:
                         movie_features=movie_features,
                         user_interactions=user_profile['interactions'],
                         similar_users=user_profile['similar_users'],
-                        interacted_scores=interacted_similarities_for_movie,
+                        interacted_movie_features=interaction_lookup_table,
                         user_genres=user_profile['genres'],
                         weights=weights
                     )
