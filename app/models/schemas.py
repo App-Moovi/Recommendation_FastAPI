@@ -2,10 +2,12 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
 from datetime import datetime
 
+
 class PotentialMatch(BaseModel):
     user_id: int
     match_condition: str
     confidence_score: float
+
 
 class MovieRecommendation(BaseModel):
     movie_id: int
@@ -13,7 +15,7 @@ class MovieRecommendation(BaseModel):
     recommendation_reason: Optional[str] = None
     matched_user_ids: List[int] = Field(default_factory=list)
     potential_matches: List[PotentialMatch] = Field(default_factory=list)
-    
+
     # Optional movie details
     title: Optional[str] = None
     original_title: Optional[str] = None
@@ -29,6 +31,7 @@ class MovieRecommendation(BaseModel):
     poster_path: Optional[str] = None
     backdrop_path: Optional[str] = None
 
+
 class RecommendationResponse(BaseModel):
     user_id: int
     recommendations: List[MovieRecommendation]
@@ -36,16 +39,19 @@ class RecommendationResponse(BaseModel):
     total_cached: int
     expires_at: datetime
 
+
 class UserMatchResponse(BaseModel):
     matched_user_id: int
     similarity_score: float
     common_movies: int
     match_reason: str
 
+
 class RecommendationRequest(BaseModel):
     user_id: int
     force_refresh: bool = False
     include_movie_details: bool = True
+
 
 class MovieFeatures(BaseModel):
     movie_id: int
@@ -62,3 +68,12 @@ class MovieFeatures(BaseModel):
     year: int
     cast_ids: List[int]
     production_companies: List[int]
+
+
+class ScoredMovie(BaseModel):
+    movie_id: int
+    score: float
+    reason: str
+    influencing_users: List[int]
+    potential_matches: List[PotentialMatch]
+    features: MovieFeatures
