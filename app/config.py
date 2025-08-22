@@ -4,11 +4,11 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # API Key
-    API_KEY: str
-
+    API_KEY: str = "moovii_engineogebvnotkjzylctjpbriujjiqykwcmtj"
+    
     # Database
-    DATABASE_URL: str = "postgresql://user:password@localhost/moovie"
-
+    DATABASE_URL: str = "postgresql://zaroor:Karthik%400306@zaroor.postgres.database.azure.com:5432/moovii"
+    
     # API Settings
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "Movie Recommender API"
@@ -22,11 +22,7 @@ class Settings(BaseSettings):
 
     # Background Jobs
     ENABLE_BACKGROUND_JOBS: bool = True
-
-    REDIS_HOST: Optional[str] = None
-    REDIS_PORT: Optional[int] = None
-    REDIS_DB: Optional[int] = None
-
+    
     class Config:
         env_file = ".env"
 
