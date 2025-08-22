@@ -127,6 +127,12 @@ class UserMatcher:
                     user_id, users, interactions_by_user
                 )
 
+                if not best_match:
+                    logger.info(
+                        f"No best match found for movie {movie_id} and condition {condition}"
+                    )
+                    continue
+
                 logger.info(
                     f"Found best match for movie {movie_id} and condition {condition}: user {best_match[0]} with confidence {best_match[1]}"
                 )
