@@ -153,6 +153,9 @@ class UserMatcher:
     ) -> Tuple[int, float]:
         """Find best match within a group of users (uses pre-fetched interactions)"""
         user_interactions = interactions_by_user.get(user_id, {})
+        if not user_interactions or not candidate_users:
+            logger.error(f"Error in _find_best_match_from_group: user_interactions: {user_interactions}, candidate_users: {candidate_users}")
+            return None
 
         best_match = None
         best_score = 0
@@ -164,6 +167,10 @@ class UserMatcher:
 
             common_movies = set(user_interactions) & set(candidate_interactions)
             if len(common_movies) < 2:
+                continue
+
+            if(not user_interactions or not candidate_interactions or not common_movies):
+                logger.error(f"Error in _find_best_match_from_group: user_interactions: {user_interactions}, candidate_interactions: {candidate_interactions}, common_movies: {common_movies}")
                 continue
 
             score = self._calculate_cosine_similarity(
