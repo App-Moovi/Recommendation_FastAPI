@@ -644,26 +644,25 @@ class RecommendationEngine:
     def _cache_recommendations(
         self, user_id: int, recommendations: List[MovieRecommendation]
     ):
-        """Cache recommendations for future use"""
         try:
-            # Clear old cache
-            clear_query = text("""
-                DELETE FROM recommendation_cache WHERE user_id = :user_id
-            """)
-            self.db.execute(clear_query, {"user_id": user_id})
+            self.db.execute(text("DELETE FROM recommendation_cache WHERE user_id = :user_id"), {"user_id": user_id})
+            self.db.execute(text("DELETE FROM potential_matches WHERE user_id = :user_id"), {"user_id": user_id})
 
-            clear_matches_query = text("""
-                DELETE FROM potential_matches WHERE user_id = :user_id
-            """)
-            self.db.execute(clear_matches_query, {"user_id": user_id})
+            tomorrow = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
 
-            # Calculate expiry (tomorrow at 00:00)
-            tomorrow = datetime.utcnow().replace(
-                hour=0, minute=0, second=0, microsecond=0
-            ) + timedelta(days=1)
-
-            # Insert new recommendations
+            # Use indexed lookup for existence check
             for idx, rec in enumerate(recommendations):
+                exists_query = text("""
+                    SELECT 1 FROM movie_preferences
+                    WHERE user_id = :user_id AND movie_id = :movie_id
+                    LIMIT 1
+                """)
+                exists = self.db.execute(
+                    exists_query, {"user_id": user_id, "movie_id": rec.movie_id}
+                ).fetchone()
+                if exists:
+                    continue
+
                 batch_num = (idx // settings.RECOMMENDATIONS_PER_REQUEST) + 1
                 position = (idx % settings.RECOMMENDATIONS_PER_REQUEST) + 1
 
@@ -691,7 +690,6 @@ class RecommendationEngine:
                     },
                 )
 
-                # Cache potential matches
                 for pm in rec.potential_matches:
                     pm_query = text("""
                         INSERT INTO potential_matches (
@@ -716,13 +714,9 @@ class RecommendationEngine:
                     )
 
             self.db.commit()
-            logger.info(
-                f"Cached {len(recommendations)} recommendations for user {user_id}"
-            )
+            logger.info(f"Cached {len(recommendations)} recommendations for user {user_id}")
 
         except Exception as e:
             logger.error(f"Error caching recommendations for user {user_id}: {str(e)}")
             self.db.rollback()
-            raise RecommendationEngineError(
-                f"Failed to cache recommendations: {str(e)}"
-            )
+            raise RecommendationEngineError(f"Failed to cache recommendations: {str(e)}")
