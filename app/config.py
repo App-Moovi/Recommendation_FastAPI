@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 
     # Recommendation Settings
     RECOMMENDATIONS_PER_REQUEST: int = 10
-    CACHE_SIZE: int = 20
+    CACHE_SIZE: int = 30
 
     # Matching Settings
     MATCH_THRESHOLD: float = 0.5  # 80% similarity threshold
