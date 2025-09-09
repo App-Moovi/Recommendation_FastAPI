@@ -60,7 +60,7 @@ class UserMatcher:
             {
                 "movie_ids": movie_ids,
                 "user_id": user_id,
-                "excluded_users": already_matched,
+                "excluded_users": list(already_matched),
             },
         ).fetchall()
 

@@ -449,7 +449,8 @@ class RecommendationEngine:
                     LIMIT :limit
                 """).bindparams(bindparam("interacted_movies", expanding=True))
 
-                similar_user_ids = [u[0] for u in user_profile["similar_users"]]
+                # FIXED: Remove extra bracket and use correct variable
+                similar_user_ids = user_profile["similar_users"]
                 results = self.db.execute(
                     similar_users_movies_query,
                     {
