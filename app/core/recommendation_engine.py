@@ -268,7 +268,7 @@ class RecommendationEngine:
                     genre_id for (genre_id,) in preferred_genres_result
                 ]
 
-            # Get similar users - FIXED: properly handle the tuple structure
+            # Get similar users
             similar_users_query = text("""
                 SELECT matched_user_id
                 FROM matches
@@ -430,7 +430,6 @@ class RecommendationEngine:
                     logger.info(f"Added {len(results)} movies from movie similarities")
 
             # 3. Movies from similar users (if not cold start)
-            # FIXED: Handle similar_users as a list of integers, not tuples
             if user_profile["similar_users"] and not is_cold_start:
                 similar_limit = 50
 
@@ -450,8 +449,7 @@ class RecommendationEngine:
                     LIMIT :limit
                 """).bindparams(bindparam("interacted_movies", expanding=True))
 
-                # FIXED: similar_users is already a list of integers
-                similar_user_ids = user_profile["similar_users"]
+                similar_user_ids = [u[0] for u in user_profile["similar_users"]]
                 results = self.db.execute(
                     similar_users_movies_query,
                     {
